@@ -39,6 +39,7 @@ class NameGuard:
         self.model_client = None
         self.create_model_client("gpt-4.1-mini")
         self.agent_list = []
+        self.external_termination = ExternalTermination()
     
     def create_model_client(self, gpt_model):
         """
@@ -144,12 +145,15 @@ class NameGuard:
         default_value = project_title_list[0] if project_title_list else None
         return gr.update(choices=project_title_list, value=default_value)
 
-    async def launch_orchestrator(self, project_title):
+    async def launch_orchestrator(self, project_title, team_preset):
         # Define a termination condition that stops the task if the critic approves.
         text_termination = TextMentionTermination("APPROVE")
         
-        # Create a team with the primary and critic agents.
-        team = RoundRobinGroupChat(self.agent_list, termination_condition=text_termination)
+        # Create a team with agents
+        if team_preset == "RoundRobinGroupChat":
+            team = RoundRobinGroupChat(self.agent_list, termination_condition=text_termination|self.external_termination)
+        elif team_preset == "Swarm":
+            team = Swarm(self.agent_list, termination_condition=text_termination|self.external_termination)
 
         await team.reset()
         outputs = []
@@ -160,7 +164,11 @@ class NameGuard:
                 outputs.append(f"## **---------- {str(source)} ----------**\n\n{str(content)}\n\n")
                 yield "".join(outputs)
  
+    def stop_orchestrator(self):
+        self.external_termination.set()
 
+
+    
     def handler(self):
         """
         Set up the Gradio Blocks UI for interacting with the search system.
@@ -212,7 +220,10 @@ class NameGuard:
                 ### 4️⃣ Launch Agent Orchestrator           
                 """
             )
-            launch_orchestrator_button = gr.Button("Launch Orchestrator", variant="primary")
+            team_preset_radio = gr.Radio(["RoundRobinGroupChat", "Swarm"], value="RoundRobinGroupChat", label="Team presets")
+            with gr.Row():
+                launch_orchestrator_button = gr.Button("Launch Orchestrator", variant="primary")
+                stop_orchestrator_button = gr.Button("Stop Orchestrator", variant="stop")
             status = gr.Markdown()
         
 
@@ -222,7 +233,7 @@ class NameGuard:
             create_agents_button.click(fn=self.create_agents, inputs=agents_manifest_textbox)
             handler.load(self.fetch_me_collection_list, inputs=None, outputs=[me_collection_dropbox])
             me_collection_dropbox.change(fn=self.fetch_me_project_list, inputs=[me_collection_dropbox], outputs=[me_project_dropbox])
-            launch_orchestrator_button.click(fn=self.launch_orchestrator, inputs=[me_project_dropbox], outputs=[status])
-
+            launch_orchestrator_button.click(fn=self.launch_orchestrator, inputs=[me_project_dropbox, team_preset_radio], outputs=[status])
+            stop_orchestrator_button.click(fn=self.stop_orchestrator, inputs=None, outputs=None)
         
         return handler
