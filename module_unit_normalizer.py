@@ -44,13 +44,13 @@ class UnitNormalizer:
                 """
             )
 
-            # UI section for selecting catalog
+            # UI section for selecting GPT model
             guide_md1 = gr.Markdown(
                 """
-                ### 1️⃣ Select the data catalog where you want to run UnitNormalizer
+                ### 1️⃣ Select a GPT model.
                 """
             )
-            catalog = gr.Radio(["Data360", "Databank", "MicrodataLib", "DDH"], value="Data360", label="Data catalog")
+            gpt_model_radio = gr.Radio(["gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4.1-mini"], value="gpt-4.1-mini", label="GPT models")
 
             
         return handler
