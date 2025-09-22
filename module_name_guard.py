@@ -13,9 +13,9 @@ from dotenv import load_dotenv
 from autogen_agentchat.ui import Console
 from autogen_core import CancellationToken
 from autogen_agentchat.agents import AssistantAgent
-from autogen_agentchat.teams import RoundRobinGroupChat, Swarm
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_agentchat.conditions import ExternalTermination, TextMentionTermination
+from autogen_agentchat.teams import RoundRobinGroupChat, SelectorGroupChat, MagenticOneGroupChat, Swarm
 
 # Set up logging format and level for debugging and monitoring
 logging.basicConfig(
@@ -152,6 +152,10 @@ class NameGuard:
         # Create a team with agents
         if team_preset == "RoundRobinGroupChat":
             team = RoundRobinGroupChat(self.agent_list, termination_condition=text_termination|self.external_termination)
+        elif team_preset == "SelectorGroupChat":
+            team = SelectorGroupChat(self.agent_list, model_client=self.model_client, termination_condition=text_termination|self.external_termination)
+        elif team_preset == "MagenticOneGroupChat":
+            team = MagenticOneGroupChat(self.agent_list, model_client=self.model_client, termination_condition=text_termination|self.external_termination)
         elif team_preset == "Swarm":
             team = Swarm(self.agent_list, termination_condition=text_termination|self.external_termination)
 
@@ -220,7 +224,7 @@ class NameGuard:
                 ### 4️⃣ Launch Agent Orchestrator           
                 """
             )
-            team_preset_radio = gr.Radio(["RoundRobinGroupChat", "Swarm"], value="RoundRobinGroupChat", label="Team presets")
+            team_preset_radio = gr.Radio(["RoundRobinGroupChat", "SelectorGroupChat", "MagenticOneGroupChat", "Swarm"], value="RoundRobinGroupChat", label="Team presets")
             with gr.Row():
                 launch_orchestrator_button = gr.Button("Launch Orchestrator", variant="primary")
                 stop_orchestrator_button = gr.Button("Stop Orchestrator", variant="stop")
