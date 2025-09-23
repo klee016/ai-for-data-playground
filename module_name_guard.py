@@ -53,17 +53,14 @@ class NameGuard:
             seed=1029,
         )
 
-    def list_agents_manifest_files(self):
+    def refresh_manifest_file_dropdown(self):
         """
-        List agents manifest YAML files.
+        Refresh the list of agents manifest YAML files.
         """
-        logging.info("Listing agents manifest YAML files...")
+        logging.info("Refreshing the list of agents manifest YAML files...")
         files = [f for f in os.listdir(AGENTS_MANIFEST_DIR) if os.path.isfile(os.path.join(AGENTS_MANIFEST_DIR, f))]
         files.sort()
-        return files
-
-    def refresh_manifest_file_dropdown(self):
-        return gr.update(choices=self.list_agents_manifest_files())
+        return gr.update(choices=files)
 
     def load_agents_manifest(self, file_name):
         """
@@ -216,7 +213,7 @@ class NameGuard:
                 """
             )
             with gr.Row():
-                manifest_file_dropdown = gr.Dropdown(choices=self.list_agents_manifest_files(), container=False, interactive=True)
+                manifest_file_dropdown = gr.Dropdown(choices=None, container=False, interactive=True)
                 load_manifest_file_btn = gr.Button("Load File")
             agents_manifest_textbox = gr.Textbox(value=None, lines=30, label="Add/Edit Agents manifest")
             with gr.Row():
@@ -259,6 +256,7 @@ class NameGuard:
             )
             create_agents_button.click(fn=self.create_agents, inputs=[agents_manifest_textbox])
             handler.load(self.fetch_me_collection_list, inputs=None, outputs=[me_collection_dropbox])
+            handler.load(self.refresh_manifest_file_dropdown, inputs=None, outputs=[manifest_file_dropdown])
             me_collection_dropbox.change(fn=self.fetch_me_project_list, inputs=[me_collection_dropbox], outputs=[me_project_dropbox])
             launch_orchestrator_button.click(fn=self.launch_orchestrator, inputs=[me_project_dropbox, team_preset_radio], outputs=[status])
             stop_orchestrator_button.click(fn=self.stop_orchestrator, inputs=None, outputs=None)
