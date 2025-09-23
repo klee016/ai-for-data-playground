@@ -24,7 +24,7 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-AGENTS_MANIFEST_DIR = "files_name_guard"
+AGENTS_MANIFEST_DIR = "agents_manifest_name_guard"
 AGENTS_MANIFEST_EXTENSION = ".yml"
 
 class NameGuard:
