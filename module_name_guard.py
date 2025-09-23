@@ -24,8 +24,8 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-AGENTS_MANIFEST_FILE_NAME = "agents_manifest_name_guard.yml"
-
+AGENTS_MANIFEST_DIR = "files_name_guard"
+AGENTS_MANIFEST_EXTENSION = ".yml"
 
 class NameGuard:
     def __init__(self, openai_api_key, me_api_key):
@@ -53,24 +53,36 @@ class NameGuard:
             seed=1029,
         )
 
-    def load_agents_manifest(self):
+    def list_agents_manifest_files(self):
+        """
+        List agents manifest YAML files.
+        """
+        logging.info("Listing agents manifest YAML files...")
+        files = [f for f in os.listdir(AGENTS_MANIFEST_DIR) if os.path.isfile(os.path.join(AGENTS_MANIFEST_DIR, f))]
+        files.sort()
+        return files
+
+    def refresh_manifest_file_dropdown(self):
+        return gr.update(choices=self.list_agents_manifest_files())
+
+    def load_agents_manifest(self, file_name):
         """
         Load agents manifest YAML file.
         """
         logging.info("Loading agents manifest YAML file...")
         try:
-            with open(AGENTS_MANIFEST_FILE_NAME, "r", encoding="utf-8") as f:
-                return f.read()
+            with open(os.path.join(AGENTS_MANIFEST_DIR, file_name), "r", encoding="utf-8") as f:
+                return f.read(), gr.update(value=file_name)
         except FileNotFoundError:
-            return ""
+            return "", None
 
-    def save_agents_manifest(self, text):
+    def save_agents_manifest(self, content, file_name):
         """
         Save agents manifest YAML file.
         """
         logging.info("Saving agents manifest YAML file...")
-        with open(AGENTS_MANIFEST_FILE_NAME, "w", encoding="utf-8") as f:
-            f.write(text)
+        with open(os.path.join(AGENTS_MANIFEST_DIR, file_name), "w", encoding="utf-8") as f:
+            f.write(content)
         gr.Info("Agents manifest saved successfully!")
 
 
@@ -203,11 +215,15 @@ class NameGuard:
                 ### 2️⃣ Define your agents in YAML format.
                 """
             )
-            agents_manifest_textbox = gr.Textbox(value=self.load_agents_manifest, lines=30, label="Agents manifest")
             with gr.Row():
-                create_agents_button = gr.Button("Create agents", variant="primary")
-                save_agents_manifest_button = gr.Button("Save to File", variant="primary")
-
+                manifest_file_dropdown = gr.Dropdown(choices=self.list_agents_manifest_files(), container=False, interactive=True)
+                load_manifest_file_btn = gr.Button("Load File")
+            agents_manifest_textbox = gr.Textbox(value=None, lines=30, label="Add/Edit Agents manifest")
+            with gr.Row():
+                new_manifest_file_name_textbox = gr.Textbox(value=None, container=False, max_lines=1, interactive=True)
+                save_agents_manifest_button = gr.Button("Save Fils As")
+            create_agents_button = gr.Button("Create agents", variant="primary")
+            
             # UI section for selecting an indicator
             guide_md3 = gr.Markdown(
                 """
@@ -233,8 +249,15 @@ class NameGuard:
 
             # Actions
             gpt_model_radio.change(fn=self.create_model_client, inputs=[gpt_model_radio])
-            save_agents_manifest_button.click(fn=self.save_agents_manifest, inputs=agents_manifest_textbox)
-            create_agents_button.click(fn=self.create_agents, inputs=agents_manifest_textbox)
+            load_manifest_file_btn.click(fn=self.load_agents_manifest, inputs=[manifest_file_dropdown], outputs=[agents_manifest_textbox, new_manifest_file_name_textbox])
+            save_agents_manifest_button.click(
+                fn=self.save_agents_manifest, inputs=[agents_manifest_textbox, new_manifest_file_name_textbox]
+            ).then(
+                fn=self.refresh_manifest_file_dropdown,
+                inputs=None,
+                outputs=[manifest_file_dropdown],
+            )
+            create_agents_button.click(fn=self.create_agents, inputs=[agents_manifest_textbox])
             handler.load(self.fetch_me_collection_list, inputs=None, outputs=[me_collection_dropbox])
             me_collection_dropbox.change(fn=self.fetch_me_project_list, inputs=[me_collection_dropbox], outputs=[me_project_dropbox])
             launch_orchestrator_button.click(fn=self.launch_orchestrator, inputs=[me_project_dropbox, team_preset_radio], outputs=[status])
