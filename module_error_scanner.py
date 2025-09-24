@@ -24,15 +24,15 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-AGENTS_MANIFEST_DIR = "agents_manifest_name_guard"
+AGENTS_MANIFEST_DIR = "agents_manifest_error_scanner"
 AGENTS_MANIFEST_EXTENSION = ".yml"
 
-class NameGuard:
+class ErrorScanner:
     def __init__(self, openai_api_key, me_api_key):
         """
-        Initialize the NameGuard object.
+        Initialize the ErrorScanner object.
         """
-        logging.info("Initializing NameGuard object...")
+        logging.info("Initializing ErrorScanner object...")
         self.openai_api_key = openai_api_key
         self.me_url = 'https://metadataeditor.worldbank.org/index.php'
         self.me_headers = {"X-API-KEY": me_api_key}
@@ -117,7 +117,7 @@ class NameGuard:
             response.raise_for_status()
             collection_list = [f"[{collection['id']}] {collection['title']}" for collection in response.json()['collections']]
             collection_list = sorted(collection_list, key=lambda s: int(re.search(r"\[(\d+)\]", s).group(1)) if re.search(r"\[(\d+)\]", s) else float("inf"))
-            return gr.update(choices=collection_list, value="[3] WDI - Education")
+            return gr.update(choices=collection_list, value="[5] WDI - Environment")
         except Exception as e:
             return gr.update(choices=[], value=None), f"Error: {e}"
 
@@ -150,14 +150,28 @@ class NameGuard:
             data = response.json()
             project_list.extend(data.get("projects", []))
 
-        project_title_list = [project['title'] for project in project_list]
-        project_title_list.sort()
+        project_title_list = [f"[{project['id']}] {project['title']}" for project in project_list]
+        project_title_list = sorted(project_title_list, key=lambda s: int(re.search(r"\[(\d+)\]", s).group(1)) if re.search(r"\[(\d+)\]", s) else float("inf"))
         default_value = project_title_list[0] if project_title_list else None
         return gr.update(choices=project_title_list, value=default_value)
 
+    def fetch_me_project_metadata(self, project):
+        """
+        Fetch project metadata from the Metadata Editor.
+        """
+        logging.info("Fetching project metadata from the Metadata Editor...")
+        project_id = re.search(r"\[(\d+)\]", project).group(1)
+        
+        response = requests.get(f"{self.me_url}/api/editor/{project_id}", headers=self.me_headers)
+
+        if response.status_code != 200:
+            raise gr.Error(f"Something wrong with the Metadata Editor search: {response.text}")
+            
+        return response.json()['project']['metadata']
+    
     async def launch_orchestrator(self, project_title, team_preset):
         # Define a termination condition that stops the task if the critic approves.
-        text_termination = TextMentionTermination("APPROVE")
+        text_termination = TextMentionTermination("DONE")
         
         # Create a team with agents
         if team_preset == "RoundRobinGroupChat":
@@ -169,9 +183,11 @@ class NameGuard:
         elif team_preset == "Swarm":
             team = Swarm(self.agent_list, termination_condition=text_termination|self.external_termination)
 
+        metadata = self.fetch_me_project_metadata(project_title)
+        
         await team.reset()
         outputs = []
-        async for event in team.run_stream(task=f"Indicator name: {project_title}"):
+        async for event in team.run_stream(task=f"Metadata: {metadata}"):
             source = getattr(event, "source", None)
             content = getattr(event, "content", None)
             if content:
@@ -195,7 +211,7 @@ class NameGuard:
             # UI section for agent description
             gr.Markdown(
                 """
-                ### The Name-Guard module is a field-specific agent designed to check the overall quality of indicator names. It evaluates how clear and understandable a name is from a human perspective.
+                ### The Error-Scanner is a cross-field agent built to detect evident errors, inconsistencies, and encoding issues throughout the metadata.
                 """
             )
 
@@ -205,7 +221,7 @@ class NameGuard:
                 ### 1️⃣ Select a GPT model.
                 """
             )
-            gpt_model_radio = gr.Radio(["gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4.1-mini"], value="gpt-4.1-mini", label="GPT models")
+            gpt_model_radio = gr.Radio(["gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4.1-mini"], value="gpt-4.1", label="GPT models")
 
             # UI section for defining agents manifest
             guide_md2 = gr.Markdown(

@@ -1,0 +1,4 @@
+agents_manifest:
+  - name: primary
+    system_message: |
+      Thoroughly study this metadata and check if there's anything evidently wrong. Ignore null fields. Respond with errors identified if there is any. End with `DONE`.
