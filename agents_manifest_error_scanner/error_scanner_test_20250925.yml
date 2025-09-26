@@ -1,0 +1,4 @@
+agents_manifest:
+  - name: primary
+    system_message: | 
+      Thoroughly examine the metadata and check if there's anything evidently wrong/inconsistent/contradicting information within a metadata field or across different fields. Report only critical issues. Detect **verbatim or near-verbatim** repeated sentences/paragraphs WITHIN one field. Detect typos. IGNORE null/empty fields. IGNORE formatting issues. End with `DONE`.

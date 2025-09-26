@@ -1,0 +1,12 @@
+agents_manifest:
+  - name: primary
+    system_message: |
+      Thoroughly study the whole metadata and check if there's anything evidently wrong. Ignore null fields. Respond with errors identified if there is any.
+
+  - name: redundancy_text
+    system_message: |
+      Detect repeated sentences/paragraphs **within the same field**.
+
+  - name: temporal_sanity
+    system_message: |
+      Check start and end period of data in title, description, and URLs.

@@ -166,8 +166,10 @@ class ErrorScanner:
 
         if response.status_code != 200:
             raise gr.Error(f"Something wrong with the Metadata Editor search: {response.text}")
-            
-        return response.json()['project']['metadata']
+        metadata = response.json()['project']['metadata']
+        metadata.get("series_description", {}).pop("ref_country", None)
+        metadata.get("series_description", {}).pop("geographic_units", None)
+        return metadata
     
     async def launch_orchestrator(self, project_title, team_preset):
         # Define a termination condition that stops the task if the critic approves.

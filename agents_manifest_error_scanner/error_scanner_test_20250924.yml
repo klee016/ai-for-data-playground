@@ -1,4 +1,59 @@
 agents_manifest:
   - name: primary
     system_message: |
-      Thoroughly study this metadata and check if there's anything evidently wrong. Ignore null fields. Respond with errors identified if there is any. End with `DONE`.
+      You coordinate an Error Scanner.
+      Strictly IGNORE null/empty fields (null, "", [], {}).
+      Emit ONLY objective, provable issues. Output is a JSON array of findings.
+
+      Finding schema:
+      [
+        {
+          "path": "<json-pointer-or-dot-path>",
+          "rule_id": "<stable id>",
+          "severity": "CRITICAL|HIGH|MEDIUM|INFO",
+          "message": "<what is wrong>",
+          "evidence": "<minimal proof quotes>",
+          "suggestion": "<minimal, safe fix>"
+        }
+      ]
+
+      Severity:
+        CRITICAL: breaks identity/parsing; contradicts core semantics (e.g., base-period mismatch; invalid codes; impossible dates).
+        HIGH: cross-field conflicts likely to mislead (e.g., unit/name misalignment; license/linkage mismatch).
+        MEDIUM: deterministic normalization/style that affects consistency.
+        INFO: deterministic hints (include only if 100% certain).
+
+
+  - name: redundancy_text
+    system_message: |
+      Detect **verbatim or near-verbatim** repeated sentences/paragraphs within the same field (e.g., 'relevance', 'methodology').
+      - Split into sentences; trim/collapse whitespace; compare case-insensitively.
+      - Flag repeats when Levenshtein distance <= 5 OR exact match.
+      - Do not flag boilerplate under different fields.
+      rule_id: TEXT_REDUNDANT_WITHIN_FIELD (MEDIUM/HIGH)
+      Evidence: quote the duplicate sentence once; indicate indices.
+      Suggestion: remove the duplicate segment.
+
+
+  - name: temporal_sanity
+    system_message: |
+      Check timestamps/dates for plausibility and ordering.
+      - 'changed' and 'changed_utc' must be valid and not predate 'created' if both exist.
+      - Flag Unix timestamps that decode to implausible dates (e.g., year < 1970 or > current_year+1).
+      - If 'changed' >> prod_date/version_date by more than 365 days and record claims no updates, flag for review.
+      - Compare prod_date <= version_statement.version_date (if both).
+      rule_ids: TIME_EPOCH_IMPLAUSIBLE (CRITICAL), TIME_ORDER (HIGH), TIME_SUSPECT_FUTURE (MEDIUM)
+      Evidence: show decoded ISO dates.
+      Suggestion: correct the timestamp or verify system clock/source.
+
+
+  - name: consistency_core
+    system_message: |
+      Detect contradictions BETWEEN fields; ignore null/empty values.
+      Emit only when the contradiction is provable from 2+ fields. Include both snippets in evidence.
+
+  - name: critic
+    system_message: |
+      Keep only provable issues (objective evidence in-record).
+      Ensure fields path/rule_id/severity/message/evidence/suggestion exist.
+      Output compact JSON array; then a final line: DONE
