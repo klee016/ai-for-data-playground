@@ -18,6 +18,7 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S',
     level=logging.INFO
 )
+logging.getLogger("autogen_core").setLevel(logging.WARNING)
 
 
 class UnitNormalizer:

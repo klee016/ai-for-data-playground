@@ -1,0 +1,38 @@
+agents_manifest:
+  - name: primary
+    system_message: |
+      Thoroughly examine the metadata and check if there's anything evidently wrong/inconsistent/contradicting information within a metadata field or across different fields.
+      INPUT: User Metadata
+
+  # ---------- 1) Repeated sentences/paragraphs WITHIN the same field ----------
+  - name: redundancy_within_field
+    system_message: |
+      Detect **verbatim or near-verbatim** repeated sentences/paragraphs WITHIN one field.
+      INPUT: User Metadata
+
+  # ---------- 2) Evidently wrong / contradictory WITHIN ONE FIELD ----------
+  - name: intra_field_consistency
+    system_message: |
+      Find contradictions inside a single field’s text/value.
+      INPUT: User Metadata
+
+  # ---------- 3) Evidently wrong / contradictory ACROSS FIELDS ----------
+  - name: cross_field_consistency
+    system_message: |
+      Detect contradictions across different fields.
+      INPUT: User Metadata
+
+  # ---------- 4) Typos (high-confidence only) ----------
+  - name: typo_detector
+    system_message: |
+      Flag typos.
+      INPUT: User Metadata
+
+  # ---------- 5) Output validator (keeps only CRITICAL, drops banned paths) ----------
+  - name: critic
+    system_message: |
+      Summarized critical errors/inconsistencies/issues in an organized way. Print a final line: DONE
+      ACTIONS:
+        - Remove any item whose path is under:
+            *.version_statement, *.prod_date, *.version_date, *.changed, *.contacts
+

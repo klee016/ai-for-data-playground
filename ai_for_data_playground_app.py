@@ -8,6 +8,7 @@ import module_definition_editor
 import module_methodology_checker
 import module_unit_normalizer
 import module_error_scanner
+import module_topic_group_radar
 # import module_relevance-framer
 # import module_limitations-reviewer
 # import module_sources-attributor
@@ -53,6 +54,10 @@ unit_normalizer_tab = unit_normalizer.handler()
 error_scanner = module_error_scanner.ErrorScanner(OPENAI_API_KEY, ME_API_KEY)
 error_scanner_tab = error_scanner.handler()
 
+topic_group_radar = module_topic_group_radar.TopicGroupRadar(OPENAI_API_KEY, ME_API_KEY)
+topic_group_radar_tab = topic_group_radar.handler()
+
+
 ################
 # Gradio Blocks
 ################
@@ -73,3 +78,5 @@ with gr.Blocks(title="AI for Data Playground").queue(max_size=20) as ai_for_data
         unit_normalizer_tab.render()
     with gr.Tab("Error-Scanner"):
         error_scanner_tab.render()
+    with gr.Tab("Topic-Group-Radar"):
+        topic_group_radar_tab.render()        

@@ -1,0 +1,15 @@
+reference:
+  - topic_group_name: People
+    description: Education; Gender; Health; Nutrition & Population; Social Protection.
+
+  - topic_group_name: Prosperity
+    description: Economic Policy; Finance; Institutions; Poverty; Trader, Investment and Competitiveness.
+
+  - topic_group_name: Planet
+    description: Agriculture and Food; Climate Change; Environment; Social Sustainability; Water.
+
+  - topic_group_name: Infrastructure
+    description: Energy & Extractives; Global Infrastructure Finance; Transport; Urban, Resilience and Land.
+
+  - topic_group_name: Digital
+    description: Connectivity; Data Infrastructure; Cybersecurity; Digital Industry and Jobs; Digital Services.

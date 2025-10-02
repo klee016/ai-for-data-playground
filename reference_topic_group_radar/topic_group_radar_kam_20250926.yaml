@@ -1,0 +1,15 @@
+reference:
+  - topic_group_name: People
+    description: Focuses on human development, including health, education, social protection, and addressing issues in fragile and conflict-affected contexts. Subgroups include Education; Gender; Health; Nutrition & Population; Social Protection.
+
+  - topic_group_name: Prosperity
+    description: Centers on economic growth, jobs, financial inclusion, and effective macroeconomic and fiscal management to boost shared prosperity. Subgroups include Economic Policy; Finance; Institutions; Poverty; Trader, Investment and Competitiveness.
+
+  - topic_group_name: Planet
+    description: Addresses environmental challenges, climate change adaptation and mitigation, sustainable food systems, water and sanitation, and a livable planet. Subgroups include Agriculture and Food; Climate Change; Environment; Social Sustainability; Water.
+
+  - topic_group_name: Infrastructure
+    description: Encompasses the development of reliable and sustainable energy, digital connectivity, and urban infrastructure to improve lives and connect communities. Subgroups include Energy & Extractives; Global Infrastructure Finance; Transport; Urban, Resilience and Land.
+
+  - topic_group_name: Digital
+    description: Focuses on leveraging digital technologies for development, connecting communities, and enhancing digital services. Subgroups include Connectivity; Data Infrastructure; Cybersecurity; Digital Industry and Jobs; Digital Services.

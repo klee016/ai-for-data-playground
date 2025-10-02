@@ -23,6 +23,7 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S',
     level=logging.INFO
 )
+logging.getLogger("autogen_core").setLevel(logging.WARNING)
 
 AGENTS_MANIFEST_DIR = "agents_manifest_name_guard"
 AGENTS_MANIFEST_EXTENSION = ".yml"
@@ -155,7 +156,7 @@ class NameGuard:
         default_value = project_title_list[0] if project_title_list else None
         return gr.update(choices=project_title_list, value=default_value)
 
-    async def launch_orchestrator(self, project_title, team_preset):
+    async def start_agents_activity(self, project_title, team_preset):
         # Define a termination condition that stops the task if the critic approves.
         text_termination = TextMentionTermination("APPROVE")
         
@@ -172,13 +173,14 @@ class NameGuard:
         await team.reset()
         outputs = []
         async for event in team.run_stream(task=f"Indicator name: {project_title}"):
+            print(event)
             source = getattr(event, "source", None)
             content = getattr(event, "content", None)
             if content:
                 outputs.append(f"## **---------- {str(source)} ----------**\n\n{str(content)}\n\n")
                 yield "".join(outputs)
  
-    def stop_orchestrator(self):
+    def stop_agents_activity(self):
         self.external_termination.set()
 
 
@@ -240,8 +242,8 @@ class NameGuard:
             )
             team_preset_radio = gr.Radio(["RoundRobinGroupChat", "SelectorGroupChat", "MagenticOneGroupChat", "Swarm"], value="RoundRobinGroupChat", label="Team presets")
             with gr.Row():
-                launch_orchestrator_button = gr.Button("Launch Orchestrator", variant="primary")
-                stop_orchestrator_button = gr.Button("Stop Orchestrator", variant="stop")
+                start_agents_activity_button = gr.Button("Start Agents Activity", variant="primary")
+                stop_agents_activity_button = gr.Button("Stop Agents Activity", variant="stop")
             status = gr.Markdown()
         
 
@@ -259,7 +261,7 @@ class NameGuard:
             handler.load(self.fetch_me_collection_list, inputs=None, outputs=[me_collection_dropbox])
             handler.load(self.refresh_manifest_file_dropdown, inputs=None, outputs=[manifest_file_dropdown])
             me_collection_dropbox.change(fn=self.fetch_me_project_list, inputs=[me_collection_dropbox], outputs=[me_project_dropbox])
-            launch_orchestrator_button.click(fn=self.launch_orchestrator, inputs=[me_project_dropbox, team_preset_radio], outputs=[status])
-            stop_orchestrator_button.click(fn=self.stop_orchestrator, inputs=None, outputs=None)
+            start_agents_activity_button.click(fn=self.start_agents_activity, inputs=[me_project_dropbox, team_preset_radio], outputs=[status])
+            stop_agents_activity_button.click(fn=self.stop_agents_activity, inputs=None, outputs=None)
         
         return handler
