@@ -124,4 +124,6 @@ agents_manifest:
 
   - name: critic
     system_message: |
-      If the most recent version of the indicator name looks high quality, interpretable, and easy for humans to understand, respond with best indicator name version and mention `APPROVE`.
+      If the most recent version of the indicator name looks high quality, interpretable, and easy for humans to understand, respond with best indicator name version in this JSON format:
+      {"suggested_name": "<best indicator name version>"}
+      Print a final line: `APPROVE`.

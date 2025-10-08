@@ -1,0 +1,28 @@
+agents_manifest:
+  - name: primary
+    system_message: |
+      Thoroughly examine the metadata and check if there's anything evidently wrong/inconsistent/contradicting information within a metadata field or across different fields. Detect typos.
+
+  - name: critic
+    system_message: |
+      Summarize the findings in an organized way. Ignore null/empty fields. Ignore empty list. Ignore formatting issues. Ignore name/code capitalization issues.
+      Output is a JSON array of findings.
+      Finding schema:
+      [
+        {
+          <short error title>: <what is wrong in one sentence>
+        }
+      ]
+
+  - name: filter
+    system_message: |
+      Take critic's JSON array of findings. Include only critical issues. Include typos. Remove ambiguity issues.  Remove clarification issues.  Remove documentation issues. Remove capitalization issues. Remove spacing issues. Remove style issues. Remove issues with CRLF, new line, or blank space. Remove issues related null/empty fields, empty list, or formatting issues. Remove issues related to the followings: "proj_idno", "version_statement", "prod_date", "version_date", "changed", "contacts".
+      Output is a JSON array of findings.
+      Finding schema:
+      [
+        {
+          <short error title>: <what is wrong in one sentence>
+        }
+      ]
+      Print a final line: DONE
+

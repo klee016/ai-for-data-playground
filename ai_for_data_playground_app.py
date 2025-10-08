@@ -3,12 +3,12 @@ import logging
 import gradio as gr
 from dotenv import load_dotenv
 
+import module_topic_group_radar
+import module_error_scanner
 import module_name_guard
 import module_definition_editor
 import module_methodology_checker
 import module_unit_normalizer
-import module_error_scanner
-import module_topic_group_radar
 # import module_relevance-framer
 # import module_limitations-reviewer
 # import module_sources-attributor
@@ -67,7 +67,11 @@ with gr.Blocks(title="AI for Data Playground").queue(max_size=20) as ai_for_data
     # UI
     gr.Markdown("# AI for Data Playground")
     intro.render()
-    
+
+    with gr.Tab("Topic-Group-Radar"):
+        topic_group_radar_tab.render()    
+    with gr.Tab("Error-Scanner"):
+        error_scanner_tab.render()
     with gr.Tab("Name-Guard"):
         name_guard_tab.render()
     with gr.Tab("Definition-Editor"):
@@ -76,7 +80,4 @@ with gr.Blocks(title="AI for Data Playground").queue(max_size=20) as ai_for_data
         methodology_checker_tab.render()
     with gr.Tab("Unit-Normalizer"):
         unit_normalizer_tab.render()
-    with gr.Tab("Error-Scanner"):
-        error_scanner_tab.render()
-    with gr.Tab("Topic-Group-Radar"):
-        topic_group_radar_tab.render()        
+    

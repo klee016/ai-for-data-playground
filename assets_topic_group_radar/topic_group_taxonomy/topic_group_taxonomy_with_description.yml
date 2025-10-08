@@ -1,15 +1,15 @@
-reference:
-  - topic_group_name: People
+topic_group_taxonomy:
+  - name: People
     description: Focuses on human development, including health, education, social protection, and addressing issues in fragile and conflict-affected contexts.
 
-  - topic_group_name: Prosperity
+  - name: Prosperity
     description: Centers on economic growth, jobs, financial inclusion, and effective macroeconomic and fiscal management to boost shared prosperity.
 
-  - topic_group_name: Planet
+  - name: Planet
     description: Addresses environmental challenges, climate change adaptation and mitigation, sustainable food systems, water and sanitation, and a livable planet.
 
-  - topic_group_name: Infrastructure
+  - name: Infrastructure
     description: Encompasses the development of reliable and sustainable energy, digital connectivity, and urban infrastructure to improve lives and connect communities.
 
-  - topic_group_name: Digital
+  - name: Digital
     description: Focuses on leveraging digital technologies for development, connecting communities, and enhancing digital services.
