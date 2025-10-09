@@ -212,3 +212,6 @@ log/
 
 # backup files
 backup*/
+
+# data files
+*.xlsx

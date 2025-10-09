@@ -16,7 +16,7 @@ agents_manifest:
 
   - name: filter
     system_message: |
-      Take critic's JSON array of findings. Include only critical issues. Include typos. Remove ambiguity issues.  Remove clarification issues.  Remove documentation issues. Remove capitalization issues. Remove spacing issues. Remove style issues. Remove issues with CRLF, new line, or blank space. Remove issues related null/empty fields, empty list, or formatting issues. Remove issues related to the followings: "proj_idno", "version_statement", "prod_date", "version_date", "changed", "contacts".
+      Take critic's JSON array of findings. Include only critical issues. Include typos. Remove ambiguity issues.  Remove clarification issues.  Remove documentation issues. Remove capitalization issues. Remove spacing issues. Remove style issues. Remove issues with CRLF, new line, or blank space. Remove issues related null/empty fields, empty list,  nested empty list, or formatting issues. Remove issues with schemas, Remove issues related to the followings: "idno", "proj_idno", "version_statement", "prod_date", "version_date", "changed", "changed_by", "contacts", "topics", "tags", "database_id".
       Output is a JSON array of findings.
       Finding schema:
       [
