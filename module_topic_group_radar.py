@@ -346,6 +346,13 @@ class TopicGroupRadar:
         )
         return fig
     
+    def get_additional_info(self, metadata):
+        name = metadata.get("series_description", {}).get("name", "")
+        definition_long = metadata.get("series_description", {}).get("definition_long", "")
+        name_embedding = self.get_embedding(self.safe_text(name), self.embedding_model)
+        definition_embedding = self.get_embedding(self.safe_text(definition_long), self.embedding_model)
+        cosine_similarity = self.cosine_similarity(name_embedding, definition_embedding)
+        return {"cosine similarity between name and definition": cosine_similarity}
     
     def handler(self):
         """
@@ -430,6 +437,7 @@ class TopicGroupRadar:
             cross_encoding_scores_js = gr.JSON(visible=False)
             baseline_cosine_similarity_js = gr.JSON(visible=False)
             topic_group_radar_plt = gr.Plot(label="Topic Group Radar Chart")
+            additional_info_js = gr.JSON(label="Additional Info")
 
             # Actions
             load_agents_manifest_file_btn.click(
@@ -514,6 +522,11 @@ class TopicGroupRadar:
                 inputs=[topic_group_names_js, cosine_similarities_js, cross_encoding_scores_js, baseline_cosine_similarity_js],
                 outputs=[topic_group_radar_plt],
                 show_api=False
+            ).then(
+                fn=self.get_additional_info,
+                inputs=[metadata_to_calculate_js],
+                outputs=[additional_info_js],
+                show_api=True, api_name="topic_group_radar__get_additional_info"
             )
         
         return handler
