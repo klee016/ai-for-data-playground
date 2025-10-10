@@ -14,6 +14,9 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import plotly.graph_objects as go
 
+import httpx
+http_client = httpx.Client(verify=False)
+
 # Set up logging format and level for debugging and monitoring
 logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -48,7 +51,7 @@ class TopicGroupRadar:
         """
         logging.info("Creating an OpenAI model client...")
         self.gpt_model = gpt_model
-        self.gpt_model_client = OpenAI(api_key=self.openai_api_key)
+        self.gpt_model_client = OpenAI(api_key=self.openai_api_key, http_client=http_client)
         tokenizer = tiktoken.encoding_for_model(self.gpt_model)
         self.logit_bias = [tokenizer.encode(token)[0] for token in ["Yes", "No"]]
 
@@ -352,7 +355,12 @@ class TopicGroupRadar:
         name_embedding = self.get_embedding(self.safe_text(name), self.embedding_model)
         definition_embedding = self.get_embedding(self.safe_text(definition_long), self.embedding_model)
         cosine_similarity = self.cosine_similarity(name_embedding, definition_embedding)
-        return {"cosine similarity between name and definition": cosine_similarity}
+        return_obj = {
+            "name": name,
+            "definition_long": definition_long,
+            "cosine_similarity": cosine_similarity
+        }
+        return return_obj
     
     def handler(self):
         """
