@@ -369,7 +369,7 @@ class TopicGroupRadar:
         Returns:
             gr.Blocks: The Gradio interface definition.
         """
-        with gr.Blocks().queue(max_size=50) as handler:
+        with gr.Blocks().queue(max_size=50, default_concurrency_limit=50) as handler:
 
             # UI section for agent description
             gr.Markdown(

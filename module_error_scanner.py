@@ -208,6 +208,7 @@ class ErrorScanner:
                 yield "".join(outputs), None
 
     def extract_json(self, text):
+        text = str(text)
         idx = text.rfind(AGENT_NAME_MARKER)
         text = text[idx:]
         match = re.search(r'(\{.*\}|\[.*\])', text, re.DOTALL)    
@@ -230,7 +231,7 @@ class ErrorScanner:
         Returns:
             gr.Blocks: The Gradio interface definition.
         """
-        with gr.Blocks().queue(max_size=50) as handler:
+        with gr.Blocks().queue(max_size=50, default_concurrency_limit=50) as handler:
 
             # UI section for agent description
             gr.Markdown(
