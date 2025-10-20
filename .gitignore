@@ -209,9 +209,11 @@ __marimo__/
 # log files
 log/
 
-
 # backup files
 backup*/
 
 # data files
 *.xlsx
+
+# test tiles
+test/
