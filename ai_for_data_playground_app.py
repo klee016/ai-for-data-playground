@@ -37,7 +37,7 @@ ME_API_KEY = os.getenv("ME_API_KEY")
 ###################
 intro = gr.Markdown(f"""
 Welcome to the AI for Data Playground!
-This space is designed for the AI for Data Team to experiment, prototype, and learn together. Our goal is to create a low-barrier environment where ideas can be tried quickly, tested automatically with built-in APIs, and refined into solutions. that may later scale into production. Use this app to explore, break things, and share findings with the team—it’s meant to be a safe sandbox for creativity and innovation.
+This space is designed for the AI for Data Team to experiment, prototype, and learn together. Our goal is to create a low-barrier environment where ideas can be tried quickly, tested automatically with built-in APIs, and refined into solutions that may later scale into production. Use this app to explore, break things, and share findings with the team—it’s meant to be a safe sandbox for creativity and innovation.
 """)
 name_guard = module_name_guard.NameGuard(OPENAI_API_KEY, ME_API_KEY)
 name_guard_tab = name_guard.handler()
