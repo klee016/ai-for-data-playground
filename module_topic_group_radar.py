@@ -4,17 +4,20 @@ import time
 import json
 import yaml
 import math
+import uuid
+import httpx
 import logging
 import requests
+import tiktoken
 import numpy as np
 import pandas as pd
 import gradio as gr
-import tiktoken
 from openai import OpenAI
+from threading import Lock
 from dotenv import load_dotenv
 import plotly.graph_objects as go
 
-import httpx
+# Disable SSL certificate verification
 http_client = httpx.Client(verify=False)
 
 # Set up logging format and level for debugging and monitoring
@@ -39,21 +42,66 @@ class TopicGroupRadar:
         self.openai_api_key = openai_api_key
         self.me_url = 'https://metadataeditor.worldbank.org/index.php'
         self.me_headers = {"X-API-KEY": me_api_key}
-        self.embedding_model = "text-embedding-3-small"
-        self.gpt_model = "gpt-4.1-mini"
-        self.gpt_model_client = None
-        self.logit_bias = []
-        self.topic_group_list = []
-    
-    def create_gpt_model_client(self, gpt_model):
+        self.sessions = {}  # Store data for each user session
+        self.lock = Lock()  # Thread-safe access to sessions
+
+    def create_session(self):
+        """
+        Create a unique session ID and initialize a new session dictionary.
+        """
+        logging.info("Creating a new session...")
+        session_id = str(uuid.uuid4())
+        with self.lock:
+            self.sessions[session_id] = {
+                "agent_list": None,
+                "topic_group_list": None,
+                "last_used_time": time.time()
+            }
+        return session_id
+
+    def get_session(self, session_id=None):
+        """
+        Retrieve session data for the given session_id.
+        """
+        with self.lock:
+            if session_id not in self.sessions:
+                raise ValueError("Session not found or expired.")
+            session = self.sessions[session_id]
+            session["last_used_time"] = time.time()
+            return session
+
+    def delete_session(self, session_id=None):
+        """
+        Delete a session, freeing its resources.
+        """
+        with self.lock:
+            if session_id in self.sessions:
+                del self.sessions[session_id]
+
+    def session_unloader(self, session_id=None):
+        """
+        Check if the session has been idle for 60 minutes and delete it.
+        """
+        session = self.get_session(session_id)
+        if session["status"] == "loaded" and (time.time() - session["last_used_time"]) >= 6000:
+            self.delete_session(session_id)
+
+    def create_openai_model_client(self):
         """
         Create an OpenAI model client.
         """
         logging.info("Creating an OpenAI model client...")
-        self.gpt_model = gpt_model
-        self.gpt_model_client = OpenAI(api_key=self.openai_api_key, http_client=http_client)
-        tokenizer = tiktoken.encoding_for_model(self.gpt_model)
-        self.logit_bias = [tokenizer.encode(token)[0] for token in ["Yes", "No"]]
+        openai_model_client = OpenAI(api_key=self.openai_api_key, http_client=http_client)
+        return openai_model_client
+
+    def get_logit_bias(self, gpt_model):
+        """
+        Get logit bias for Yes and No tokens.
+        """
+        logging.info("Getting logit bias...")
+        tokenizer = tiktoken.encoding_for_model(gpt_model)
+        logit_bias = [tokenizer.encode(token)[0] for token in ["Yes", "No"]]
+        return logit_bias
 
     def refresh_agents_manifest_files_dd(self):
         """
@@ -64,12 +112,11 @@ class TopicGroupRadar:
         files.sort()
         return gr.update(choices=files)
 
-    def load_agents_manifest_file(self, file_name):
+    def load_agents_manifest_file(self, file_name, session_id=None):
         """
         Load agents manifest YAML file.
         """
         logging.info("Loading agents manifest YAML file...")
-        print(file_name)
         try:
             with open(os.path.join(AGENTS_MANIFEST_DIR, file_name), "r", encoding="utf-8") as f:
                 return f.read(), gr.update(value=file_name)
@@ -93,15 +140,15 @@ class TopicGroupRadar:
         os.remove(os.path.join(AGENTS_MANIFEST_DIR, file_name))
         gr.Info("Agents manifest deleted successfully!")
 
-    def create_agents(self, agents_manifest, embedding_model, gpt_model):
+    def create_agents(self, agents_manifest, embedding_model, gpt_model, session_id=None):
         """
         Create agents according to the agents manifest YAML file.
         """
         logging.info("Creating agents according to the agents manifest YAML file...")
+        session = self.get_session(session_id)
         manifest = yaml.safe_load(agents_manifest)
-        self.embedding_model = embedding_model
-        self.create_gpt_model_client(gpt_model)
-        self.agent_list = []
+        openai_model_client = self.create_openai_model_client()
+        agent_list = []
         for entry in manifest.get("agents_manifest", []):
             name = entry.get("name")
             system_message = entry.get("system_message")
@@ -110,10 +157,13 @@ class TopicGroupRadar:
                 continue
             agent = {
                 "name": name,
+                "openai_model_client": openai_model_client,
+                "embedding_model": embedding_model,
+                "gpt_model": gpt_model,
                 "system_message": system_message
             }
-            self.agent_list.append(agent) 
-        
+            agent_list.append(agent) 
+        session['agent_list'] = agent_list
         gr.Info("Agents created successfully!")
         return gr.update()
     
@@ -126,7 +176,7 @@ class TopicGroupRadar:
         files.sort()
         return gr.update(choices=files)
 
-    def load_topic_group_taxonomy_file(self, file_name):
+    def load_topic_group_taxonomy_file(self, file_name, session_id=None):
         """
         Load topic group taxonomy YAML file.
         """
@@ -161,9 +211,11 @@ class TopicGroupRadar:
             return json.dumps(x, ensure_ascii=False, sort_keys=False)
         return str(x)
 
-    def get_embedding(self, text: str, model: str):
+    def get_embedding(self, agent_list, text):
         text = text.replace("\n", " ")
-        embedding = self.gpt_model_client.embeddings.create(input=[text], model=model).data[0].embedding
+        openai_model_client = agent_list[0]['openai_model_client']
+        embedding_model = agent_list[0]['embedding_model']
+        embedding = openai_model_client.embeddings.create(input=[text], model=embedding_model).data[0].embedding
         return np.array(embedding, dtype=np.float32)
 
     def cosine_similarity(self, a: np.ndarray, b: np.ndarray):
@@ -172,14 +224,16 @@ class TopicGroupRadar:
             return 0.0
         return float(np.dot(a, b) / denom)
     
-    def create_topic_groups(self, topic_group_taxonomy):
+    def create_topic_groups(self, topic_group_taxonomy, session_id=None):
         """
         Create topic groups according to the topic group taxonomy YAML file.
         """
         logging.info("Creating topic groups according to the topic group taxonomy YAML file...")
+        session = self.get_session(session_id)
+        agent_list = session['agent_list']
         taxonomy = yaml.safe_load(topic_group_taxonomy)
 
-        self.topic_group_list = []
+        topic_group_list = []
         for entry in taxonomy.get("topic_group_taxonomy", []):
             name = entry.get("name")
             description = entry.get("description")
@@ -189,10 +243,10 @@ class TopicGroupRadar:
             topic_group = {
                 "name": name,
                 "description": description,
-                "embedding": self.get_embedding(self.safe_text(description), self.embedding_model)
+                "embedding": self.get_embedding(agent_list, self.safe_text(description))
             }
-            self.topic_group_list.append(topic_group) 
-        
+            topic_group_list.append(topic_group) 
+        session['topic_group_list'] = topic_group_list
         gr.Info("Topic groups created successfully!")
         return gr.update()
 
@@ -260,26 +314,28 @@ class TopicGroupRadar:
         metadata.get("series_description", {}).pop("geographic_units", None)
         return metadata
 
-    def get_cross_encoding(self, metadata, topic_group):
+    def get_cross_encoding(self, agent_list, metadata, topic_group):
         """
         Get cross-encoding score with OpenAI GPT.
         """          
-        system_message = self.agent_list[0]['system_message'] 
+        system_message = agent_list[0]['system_message'] 
         user_message = '''
             Metadata: {metadata}
             Topic Group: {topic_group}
             Relevant:
         '''
+        gpt_model = agent_list[0]['gpt_model']
+        logit_bias = self.get_logit_bias(gpt_model)
         
-        response = self.gpt_model_client.chat.completions.create(
-            model=self.gpt_model,
+        response = agent_list[0]['openai_model_client'].chat.completions.create(
+            model=gpt_model,
             messages=[
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": user_message.format(metadata=metadata, topic_group=topic_group)}
             ],
             temperature=0,
             logprobs=True,
-            logit_bias={self.logit_bias[0]: 1, self.logit_bias[1]: 1},
+            logit_bias={logit_bias[0]: 1, logit_bias[1]: 1},
         )
 
         return (
@@ -287,7 +343,10 @@ class TopicGroupRadar:
             response.choices[0].logprobs.content[0].logprob,
         )
 
-    def calculate_semantic_similarities(self, metadata_to_calculate):
+    def calculate_semantic_similarities(self, metadata_to_calculate, session_id=None):
+        session = self.get_session(session_id)
+        agent_list = session['agent_list']
+        topic_group_list = session['topic_group_list']
         metadata_all = metadata_to_calculate
         metadata_selected = {
             "name": metadata_all.get("series_description", {}).get("name", ""),
@@ -295,25 +354,22 @@ class TopicGroupRadar:
             # "methodology": metadata_all.get("series_description", {}).get("methodology", ""),
             # "dimensions": metadata_all.get("series_description", {}).get("dimensions", "")
         }        
-        metadata_embedding = self.get_embedding(self.safe_text(metadata_selected), self.embedding_model) 
-        
-        # baseline_text = "Education; Gender; Health; Nutrition & Population; Social Protection; Economic Policy; Finance; Institutions; Poverty; Trader, Investment and Competitiveness; Agriculture and Food; Climate Change; Environment; Social Sustainability; Water; Energy & Extractives; Global Infrastructure Finance; Transport; Urban, Resilience and Land; Data Infrastructure; Cybersecurity; Digital Industry and Jobs; Digital Services"
+        metadata_embedding = self.get_embedding(agent_list, self.safe_text(metadata_selected)) 
         baseline_text = "This document outlines key objectives, methodologies, and expected outcomes of the proposed activities. It aims to support coordination among relevant stakeholders and ensure alignment with institutional priorities."
-        baseline_embedding = self.get_embedding(baseline_text, self.embedding_model)
+        baseline_embedding = self.get_embedding(agent_list, baseline_text)
         baseline_cosine_similarity = self.cosine_similarity(metadata_embedding, baseline_embedding)
-        print(f"baseline_cosine_similarity: {baseline_cosine_similarity}")
 
         topic_group_names = []
         topic_group_descriptions = []
         cosine_similarities = []
         cross_encoding_scores = []
-        for topic_group in self.topic_group_list:
+        for topic_group in topic_group_list:
             topic_group_names.append(str(topic_group.get("name", "")).strip() or "unnamed")
             topic_group_descriptions.append(str(topic_group.get("description", "")).strip() or "none")
             topic_group_embedding = topic_group.get("embedding", [])
             cosine_similarity = self.cosine_similarity(metadata_embedding, topic_group_embedding) 
             cosine_similarities.append(cosine_similarity)
-            cross_encoding_prediction, cross_encoding_logprob = self.get_cross_encoding(self.safe_text(metadata_selected), str(topic_group.get("description", "")).strip())
+            cross_encoding_prediction, cross_encoding_logprob = self.get_cross_encoding(agent_list, self.safe_text(metadata_selected), str(topic_group.get("description", "")).strip())
             cross_encoding_probability  = math.exp(cross_encoding_logprob)
             cross_encoding_score = cross_encoding_probability * -1 + 1 if cross_encoding_prediction == "No" else cross_encoding_probability
             cross_encoding_scores.append(cross_encoding_score)       
@@ -349,11 +405,13 @@ class TopicGroupRadar:
         )
         return fig
     
-    def get_additional_info(self, metadata):
+    def get_additional_info(self, metadata, session_id=None):
+        session = self.get_session(session_id)
+        agent_list = session['agent_list']
         name = metadata.get("series_description", {}).get("name", "")
         definition_long = metadata.get("series_description", {}).get("definition_long", "")
-        name_embedding = self.get_embedding(self.safe_text(name), self.embedding_model)
-        definition_embedding = self.get_embedding(self.safe_text(definition_long), self.embedding_model)
+        name_embedding = self.get_embedding(agent_list, self.safe_text(name))
+        definition_embedding = self.get_embedding(agent_list, self.safe_text(definition_long))
         cosine_similarity = self.cosine_similarity(name_embedding, definition_embedding)
         return_obj = {
             "name": name,
@@ -384,8 +442,8 @@ class TopicGroupRadar:
                 ### 1️⃣ Select an embedding model (cosine similarity) and a GPT model (cross-embedding score).
                 """
             )
-            embedding_model_rdo = gr.Radio(["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"], value=self.embedding_model, label="Embedding models")
-            gpt_model_rdo = gr.Radio(["gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4.1-mini"], value=self.gpt_model, label="GPT models")
+            embedding_model_rdo = gr.Radio(["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"], value="text-embedding-3-small", label="Embedding models")
+            gpt_model_rdo = gr.Radio(["gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4.1-mini"], value="gpt-4.1-mini", label="GPT models")
 
 
             # UI section for defining agents
@@ -445,12 +503,18 @@ class TopicGroupRadar:
             cross_encoding_scores_js = gr.JSON(visible=False)
             baseline_cosine_similarity_js = gr.JSON(visible=False)
             topic_group_radar_plt = gr.Plot(label="Topic Group Radar Chart")
-            additional_info_js = gr.JSON(label="Additional Info")
+            with gr.Accordion("Additional Info", open=False):
+                name_definition_info_js = gr.JSON(label="Name/Definition")
+            session_id = gr.Textbox(visible=False)
 
             # Actions
+            handler.load(self.create_session, inputs=None, outputs=[session_id], show_api=True, api_name="topic_group_radar__create_session")
+            handler.load(self.fetch_me_collection_list, inputs=None, outputs=[me_collection_dd], show_api=False)
+            handler.load(self.refresh_agents_manifest_files_dd, inputs=None, outputs=[agents_manifest_files_dd], show_api=False)
+            handler.load(self.refresh_topic_group_taxonomy_files_dd, inputs=None, outputs=[topic_group_taxonomy_files_dd], show_api=False)
             load_agents_manifest_file_btn.click(
                 fn=self.load_agents_manifest_file, 
-                inputs=[agents_manifest_files_dd], 
+                inputs=[agents_manifest_files_dd, session_id], 
                 outputs=[agents_manifest_tb, agents_manifest_file_name_tb], 
                 show_api=True, api_name="topic_group_radar__load_agents_manifest")
             save_agents_manifest_file_btn.click(
@@ -475,13 +539,13 @@ class TopicGroupRadar:
             )
             create_agents_btn.click(
                 fn=self.create_agents, 
-                inputs=[agents_manifest_tb, embedding_model_rdo, gpt_model_rdo], 
+                inputs=[agents_manifest_tb, embedding_model_rdo, gpt_model_rdo, session_id], 
                 outputs=[agents_manifest_tb], 
                 show_api=True, api_name="topic_group_radar__create_agents"
             )
             load_topic_group_taxonomy_file_btn.click(
                 fn=self.load_topic_group_taxonomy_file, 
-                inputs=[topic_group_taxonomy_files_dd], 
+                inputs=[topic_group_taxonomy_files_dd, session_id], 
                 outputs=[topic_group_taxonomy_tb, topic_group_taxonomy_file_name_tb], 
                 show_api=True, api_name="topic_group_radar__load_topic_group_taxonomy"
             )
@@ -507,13 +571,10 @@ class TopicGroupRadar:
             )
             create_topic_groups_btn.click(
                 fn=self.create_topic_groups, 
-                inputs=[topic_group_taxonomy_tb], 
+                inputs=[topic_group_taxonomy_tb, session_id], 
                 outputs=[topic_group_taxonomy_tb], 
                 show_api=True, api_name="topic_group_radar__create_topic_groups"
             )
-            handler.load(self.fetch_me_collection_list, inputs=None, outputs=[me_collection_dd], show_api=False)
-            handler.load(self.refresh_agents_manifest_files_dd, inputs=None, outputs=[agents_manifest_files_dd], show_api=False)
-            handler.load(self.refresh_topic_group_taxonomy_files_dd, inputs=None, outputs=[topic_group_taxonomy_files_dd], show_api=False)
             me_collection_dd.change(fn=self.fetch_me_project_list, inputs=[me_collection_dd], outputs=[me_project_dd], show_api=False)
             calculate_semantic_similarities_btn.click(
                 fn=self.fetch_me_project_metadata,
@@ -522,7 +583,7 @@ class TopicGroupRadar:
                 show_api=False
             ).then(
                 fn=self.calculate_semantic_similarities, 
-                inputs=[metadata_to_calculate_js], 
+                inputs=[metadata_to_calculate_js, session_id], 
                 outputs=[topic_group_names_js, cosine_similarities_js, cross_encoding_scores_js, baseline_cosine_similarity_js, topic_group_radar_plt], 
                 show_api=True, api_name="topic_group_radar__calculate_semantic_similarities"
             ).then(
@@ -532,9 +593,14 @@ class TopicGroupRadar:
                 show_api=False
             ).then(
                 fn=self.get_additional_info,
-                inputs=[metadata_to_calculate_js],
-                outputs=[additional_info_js],
+                inputs=[metadata_to_calculate_js, session_id],
+                outputs=[name_definition_info_js],
                 show_api=True, api_name="topic_group_radar__get_additional_info"
             )
+            # Periodically unload session if idle
+            unload_session_timer = gr.Timer(600)
+            unload_session_timer.tick(fn=self.session_unloader, inputs=[session_id], show_api=False)
+            # On UI unload, run delete_session to clean up resources
+            handler.unload(lambda: self.delete_session(session_id))
         
         return handler

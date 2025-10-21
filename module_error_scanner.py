@@ -4,11 +4,14 @@ import time
 import json
 import yaml
 import math
+import uuid
+import httpx
 import logging
 import requests
 import numpy as np
 import pandas as pd
 import gradio as gr
+from threading import Lock
 from dotenv import load_dotenv
 from autogen_agentchat.ui import Console
 from autogen_core import CancellationToken
@@ -16,6 +19,9 @@ from autogen_agentchat.agents import AssistantAgent
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_agentchat.conditions import ExternalTermination, TextMentionTermination
 from autogen_agentchat.teams import RoundRobinGroupChat, SelectorGroupChat, MagenticOneGroupChat, Swarm
+
+# Disable SSL certificate verification
+http_client = httpx.AsyncClient(verify=False)
 
 # Set up logging format and level for debugging and monitoring
 logging.basicConfig(
@@ -39,24 +45,64 @@ class ErrorScanner:
         self.openai_api_key = openai_api_key
         self.me_url = 'https://metadataeditor.worldbank.org/index.php'
         self.me_headers = {"X-API-KEY": me_api_key}
-        self.gpt_model = "gpt-5-mini"
-        self.gpt_model_client = None
-        self.agent_list = []
-        self.external_termination = ExternalTermination()
-    
-    def create_gpt_model_client(self, gpt_model):
+        self.sessions = {}  # Store data for each user session
+        self.lock = Lock()  # Thread-safe access to sessions
+
+    def create_session(self):
+        """
+        Create a unique session ID and initialize a new session dictionary.
+        """
+        logging.info("Creating a new session...")
+        session_id = str(uuid.uuid4())
+        with self.lock:
+            self.sessions[session_id] = {
+                "agent_list": None,
+                "external_termination": ExternalTermination(),
+                "last_used_time": time.time()
+            }
+        return session_id
+
+    def get_session(self, session_id=None):
+        """
+        Retrieve session data for the given session_id.
+        """
+        with self.lock:
+            if session_id not in self.sessions:
+                raise ValueError("Session not found or expired.")
+            session = self.sessions[session_id]
+            session["last_used_time"] = time.time()
+            return session
+
+    def delete_session(self, session_id=None):
+        """
+        Delete a session, freeing its resources.
+        """
+        with self.lock:
+            if session_id in self.sessions:
+                del self.sessions[session_id]
+
+    def session_unloader(self, session_id=None):
+        """
+        Check if the session has been idle for 60 minutes and delete it.
+        """
+        session = self.get_session(session_id)
+        if session["status"] == "loaded" and (time.time() - session["last_used_time"]) >= 6000:
+            self.delete_session(session_id)
+
+    def create_openai_model_client(self, gpt_model):
         """
         Create an OpenAI model client.
         """
         logging.info("Creating an OpenAI model client...")
-        self.gpt_model = gpt_model
         temperature = 1 if gpt_model.startswith("gpt-5") else 0
-        self.gpt_model_client = OpenAIChatCompletionClient(
+        openai_model_client = OpenAIChatCompletionClient(
             model=gpt_model,
             api_key=self.openai_api_key,
             temperature=temperature,
             seed=1029,
+            http_client=http_client
         )
+        return openai_model_client
 
     def refresh_agents_manifest_files_dd(self):
         """
@@ -67,7 +113,7 @@ class ErrorScanner:
         files.sort()
         return gr.update(choices=files)
 
-    def load_agents_manifest_file(self, file_name):
+    def load_agents_manifest_file(self, file_name, session_id=None):
         """
         Load agents manifest YAML file.
         """
@@ -95,14 +141,15 @@ class ErrorScanner:
         os.remove(os.path.join(AGENTS_MANIFEST_DIR, file_name))
         gr.Info("Agents manifest deleted successfully!")
 
-    def create_agents(self, agents_manifest, gpt_model):
+    def create_agents(self, agents_manifest, gpt_model, session_id=None):
         """
         Create agents according to the agents manifest YAML file.
         """
         logging.info("Creating agents according to the agents manifest YAML file...")
+        session = self.get_session(session_id)
         manifest = yaml.safe_load(agents_manifest)
-        self.create_gpt_model_client(gpt_model)
-        self.agent_list = []
+        openai_model_client = self.create_openai_model_client(gpt_model)
+        agent_list = []
         for entry in manifest.get("agents_manifest", []):
             name = entry.get("name")
             system_message = entry.get("system_message")
@@ -111,15 +158,14 @@ class ErrorScanner:
                 continue
             agent = AssistantAgent(
                 name=name,
-                model_client=self.gpt_model_client,
+                model_client=openai_model_client,
                 system_message=system_message
             )
-            self.agent_list.append(agent) 
-            
+            agent_list.append(agent) 
+        session['agent_list'] = agent_list   
         gr.Info("Agents created successfully!")
         return gr.update()
         
-
     def fetch_me_collection_list(self):
         """
         Fetch collection list from the Metadata Editor.
@@ -184,19 +230,22 @@ class ErrorScanner:
         metadata.get("series_description", {}).pop("geographic_units", None)
         return metadata
     
-    async def start_agents_activity(self, metadata_to_scan, team_preset="RoundRobinGroupChat"):
+    async def start_agents_activity(self, metadata_to_scan, team_preset="RoundRobinGroupChat", session_id=None):        
+        session = self.get_session(session_id)
+        agent_list = session['agent_list']
+
         # Define a termination condition that stops the task if the critic approves.
         text_termination = TextMentionTermination("DONE")
         
         # Create a team with agents
         if team_preset == "RoundRobinGroupChat":
-            team = RoundRobinGroupChat(self.agent_list, termination_condition=text_termination|self.external_termination)
+            team = RoundRobinGroupChat(agent_list, termination_condition=text_termination|session['external_termination'])
         elif team_preset == "SelectorGroupChat":
-            team = SelectorGroupChat(self.agent_list, model_client=self.gpt_model_client, termination_condition=text_termination|self.external_termination)
+            team = SelectorGroupChat(agent_list, termination_condition=text_termination|session['external_termination'])
         elif team_preset == "MagenticOneGroupChat":
-            team = MagenticOneGroupChat(self.agent_list, model_client=self.gpt_model_client, termination_condition=text_termination|self.external_termination)
+            team = MagenticOneGroupChat(agent_list, termination_condition=text_termination|session['external_termination'])
         elif team_preset == "Swarm":
-            team = Swarm(self.agent_list, termination_condition=text_termination|self.external_termination)
+            team = Swarm(agent_list, termination_condition=text_termination|session['external_termination'])
         
         await team.reset()
         outputs = []
@@ -221,8 +270,9 @@ class ErrorScanner:
                 return None
         return None
     
-    def stop_agents_activity(self):
-        self.external_termination.set()
+    def stop_agents_activity(self, session_id=None):
+        session = self.get_session(session_id)
+        session['external_termination'].set()
     
     def handler(self):
         """
@@ -246,7 +296,7 @@ class ErrorScanner:
                 ### 1️⃣ Select a GPT model.
                 """
             )
-            gpt_model_rdo = gr.Radio(["gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4.1-mini"], value=self.gpt_model, label="GPT models")
+            gpt_model_rdo = gr.Radio(["gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4.1-mini"], value="gpt-5-mini", label="GPT models")
 
             # UI section for defining agents
             guide_md2 = gr.Markdown(
@@ -288,12 +338,16 @@ class ErrorScanner:
             with gr.Accordion("Agents activity"):                
                 agents_activity_md = gr.Markdown(height=200, max_height=200)
             final_output_js = gr.JSON(label="Final output")
+            session_id = gr.Textbox(visible=False)
         
 
             # Actions
+            handler.load(self.create_session, inputs=None, outputs=[session_id], show_api=True, api_name="error_scanner__create_session")
+            handler.load(fn=self.fetch_me_collection_list, inputs=None, outputs=[me_collection_dd], show_api=False)
+            handler.load(fn=self.refresh_agents_manifest_files_dd, inputs=None, outputs=[agents_manifest_files_dd],show_api=False)
             load_agents_manifest_file_btn.click(
                 fn=self.load_agents_manifest_file, 
-                inputs=[agents_manifest_files_dd], 
+                inputs=[agents_manifest_files_dd, session_id], 
                 outputs=[agents_manifest_tb, agents_manifest_file_name_tb], 
                 show_api=True, api_name="error_scanner__load_agents_manifest"
             )
@@ -319,12 +373,10 @@ class ErrorScanner:
             )
             create_agents_btn.click(
                 fn=self.create_agents, 
-                inputs=[agents_manifest_tb, gpt_model_rdo], 
+                inputs=[agents_manifest_tb, gpt_model_rdo, session_id], 
                 outputs=[agents_manifest_tb],
                 show_api=True, api_name="error_scanner__create_agents"
             )
-            handler.load(fn=self.fetch_me_collection_list, inputs=None, outputs=[me_collection_dd], show_api=False)
-            handler.load(fn=self.refresh_agents_manifest_files_dd, inputs=None, outputs=[agents_manifest_files_dd],show_api=False)
             me_collection_dd.change(fn=self.fetch_me_project_list, inputs=[me_collection_dd], outputs=[me_project_dd], show_api=False)
             start_agents_activity_btn.click(
                 fn=self.fetch_me_project_metadata,
@@ -333,7 +385,7 @@ class ErrorScanner:
                 show_api=False
             ).then(
                 fn=self.start_agents_activity, 
-                inputs=[metadata_to_scan_tb, team_preset_rdo], 
+                inputs=[metadata_to_scan_tb, team_preset_rdo, session_id], 
                 outputs=[agents_activity_md, final_output_js],
                 show_api=True, api_name="error_scanner__start_agents_activity"
             ).then(
@@ -342,6 +394,11 @@ class ErrorScanner:
                 outputs=[final_output_js],
                 show_api=False
             )
-            stop_agents_activity_btn.click(fn=self.stop_agents_activity, inputs=None, outputs=None, show_api=False)
-        
+            stop_agents_activity_btn.click(fn=self.stop_agents_activity, inputs=[session_id], outputs=None, show_api=False)
+            # Periodically unload session if idle
+            unload_session_timer = gr.Timer(600)
+            unload_session_timer.tick(fn=self.session_unloader, inputs=[session_id], show_api=False)
+            # On UI unload, run delete_session to clean up resources
+            handler.unload(lambda: self.delete_session(session_id))
+
         return handler
