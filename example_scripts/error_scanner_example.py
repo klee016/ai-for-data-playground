@@ -102,9 +102,18 @@ def extract_json(text):
 gradio_client = Client("https://w1lxscirender02.worldbank.org:8082/ai_for_data_playground", ssl_verify=False)
 
 # %%
+# create a new session
+job = gradio_client.submit(
+	api_name="/error_scanner__create_session"
+)
+outputs = wait_for_job_outputs(job)
+session_id = outputs[0]
+
+# %%
 # load agents manifest
 job = gradio_client.submit(
 	file_name="default_agents_manifest.yml",
+	session_id=session_id,
 	api_name="/error_scanner__load_agents_manifest"
 )
 outputs = wait_for_job_outputs(job)
@@ -115,16 +124,17 @@ agents_manifest = outputs[0][0]
 job = gradio_client.submit(
 	agents_manifest=agents_manifest,
 	gpt_model="gpt-5-mini",
+	session_id=session_id,
 	api_name="/error_scanner__create_agents"
 )
 outputs = wait_for_job_outputs(job)
 
 # %%
-me_collection = "[151] P1: Planet"
+me_collection = "[5] WDI - Environment"
 me_project_list = fetch_me_project_list(me_collection)
 
 # %%
-output_file_name = "Data360_P1_Planet_detected_metadata_issues.xlsx"
+output_file_name = "WDI_Environment_detected_metadata_issues.xlsx"
 
 if os.path.exists(output_file_name):
     df_detected_issues = pd.read_excel(output_file_name)
@@ -142,6 +152,7 @@ for me_project in tqdm(me_project_list):
     # start agents activity
     job = gradio_client.submit(
         metadata_to_scan=metadata_to_scan,
+        session_id=session_id,
         api_name="/error_scanner__start_agents_activity"
     )
     outputs = wait_for_job_outputs(job)
