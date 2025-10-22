@@ -38,7 +38,7 @@ class TopicGroupRadar:
         """
         Initialize the TopicGroupRadar object.
         """
-        logging.info("Initializing ErrorScanner object...")
+        logging.info("Initializing TopicGroupRadar object...")
         self.openai_api_key = openai_api_key
         self.me_url = 'https://metadataeditor.worldbank.org/index.php'
         self.me_headers = {"X-API-KEY": me_api_key}
