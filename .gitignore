@@ -217,3 +217,5 @@ backup*/
 
 # test tiles
 test/
+test_gradio.py
+test_gradio.sh
