@@ -36,7 +36,7 @@ TOPIC_GROUP_TAXONOMY_DEFAULT_FILE = "default_topic_group_taxonomy.yml"
 class TopicGroupRadar:
     def __init__(self, openai_api_key, me_api_key):
         """
-        Initialize the ErrorScanner object.
+        Initialize the TopicGroupRadar object.
         """
         logging.info("Initializing ErrorScanner object...")
         self.openai_api_key = openai_api_key

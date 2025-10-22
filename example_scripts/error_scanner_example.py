@@ -130,11 +130,11 @@ job = gradio_client.submit(
 outputs = wait_for_job_outputs(job)
 
 # %%
-me_collection = "[5] WDI - Environment"
+me_collection = "[3] WDI - Education"
 me_project_list = fetch_me_project_list(me_collection)
 
 # %%
-output_file_name = "WDI_Environment_detected_metadata_issues.xlsx"
+output_file_name = "WDI_Education_detected_metadata_issues.xlsx"
 
 if os.path.exists(output_file_name):
     df_detected_issues = pd.read_excel(output_file_name)
