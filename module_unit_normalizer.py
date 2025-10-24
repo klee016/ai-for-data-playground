@@ -36,7 +36,7 @@ class UnitNormalizer:
         Returns:
             gr.Blocks: The Gradio interface definition.
         """
-        with gr.Blocks().queue(max_size=50, default_concurrency_limit=50) as handler:
+        with gr.Blocks().queue(max_size=500, default_concurrency_limit=200) as handler:
 
             # UI section for 
             gr.Markdown(

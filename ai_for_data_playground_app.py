@@ -62,7 +62,7 @@ topic_group_radar_tab = topic_group_radar.handler()
 # Gradio Blocks
 ################
 
-with gr.Blocks(title="AI for Data Playground").queue(max_size=50, default_concurrency_limit=50) as ai_for_data_playground:
+with gr.Blocks(title="AI for Data Playground").queue(max_size=500, default_concurrency_limit=200) as ai_for_data_playground:
 
     # UI
     gr.Markdown("# AI for Data Playground")

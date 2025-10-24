@@ -86,7 +86,7 @@ class ErrorScanner:
         Check if the session has been idle for 60 minutes and delete it.
         """
         session = self.get_session(session_id)
-        if session["status"] == "loaded" and (time.time() - session["last_used_time"]) >= 6000:
+        if (time.time() - session["last_used_time"]) >= 6000:
             self.delete_session(session_id)
 
     def create_openai_model_client(self, gpt_model):
@@ -281,7 +281,7 @@ class ErrorScanner:
         Returns:
             gr.Blocks: The Gradio interface definition.
         """
-        with gr.Blocks().queue(max_size=50, default_concurrency_limit=50) as handler:
+        with gr.Blocks().queue(max_size=500, default_concurrency_limit=200) as handler:
 
             # UI section for agent description
             gr.Markdown(
@@ -339,10 +339,11 @@ class ErrorScanner:
                 agents_activity_md = gr.Markdown(height=200, max_height=200)
             final_output_js = gr.JSON(label="Final output")
             session_id = gr.Textbox(visible=False)
+            delete_session_btn = gr.Button("Delete session", visible=False)
         
 
             # Actions
-            handler.load(self.create_session, inputs=None, outputs=[session_id], show_api=True, api_name="error_scanner__create_session")
+            handler.load(fn=self.create_session, inputs=None, outputs=[session_id], show_api=True, api_name="error_scanner__create_session")
             handler.load(fn=self.fetch_me_collection_list, inputs=None, outputs=[me_collection_dd], show_api=False)
             handler.load(fn=self.refresh_agents_manifest_files_dd, inputs=None, outputs=[agents_manifest_files_dd],show_api=False)
             load_agents_manifest_file_btn.click(
@@ -395,6 +396,8 @@ class ErrorScanner:
                 show_api=False
             )
             stop_agents_activity_btn.click(fn=self.stop_agents_activity, inputs=[session_id], outputs=None, show_api=False)
+            delete_session_btn.click(fn=self.delete_session, inputs=[session_id], show_api=True, api_name="error_scanner__delete_session")
+
             # Periodically unload session if idle
             unload_session_timer = gr.Timer(600)
             unload_session_timer.tick(fn=self.session_unloader, inputs=[session_id], show_api=False)
