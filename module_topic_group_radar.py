@@ -443,7 +443,7 @@ class TopicGroupRadar:
                 """
             )
             embedding_model_rdo = gr.Radio(["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"], value="text-embedding-3-small", label="Embedding models")
-            gpt_model_rdo = gr.Radio(["gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4.1-mini"], value="gpt-4.1-mini", label="GPT models")
+            gpt_model_rdo = gr.Radio(["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-4.1", "gpt-4.1-mini"], value="gpt-4.1-mini", label="GPT models")
 
 
             # UI section for defining agents

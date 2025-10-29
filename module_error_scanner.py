@@ -296,7 +296,7 @@ class ErrorScanner:
                 ### 1️⃣ Select a GPT model.
                 """
             )
-            gpt_model_rdo = gr.Radio(["gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4.1-mini"], value="gpt-5-mini", label="GPT models")
+            gpt_model_rdo = gr.Radio(["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-4.1", "gpt-4.1-mini"], value="gpt-5-mini", label="GPT models")
 
             # UI section for defining agents
             guide_md2 = gr.Markdown(
