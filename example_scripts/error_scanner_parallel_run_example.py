@@ -212,14 +212,14 @@ def run_parallel(todo_items, output_df, output_file_name):
                 
 
 # %%
-me_collection = "[8] WDI - Health"
+me_collection = "[153] P3: Prosperity"
 me_project_list = fetch_me_project_list(me_collection)
 
 # %%
-todo = [(me_collection, me_project) for me_project in me_project_list[:120]]
+todo = [(me_collection, me_project) for me_project in me_project_list]
 
 # %%
-output_file_name = "WDI_Health_detected_metadata_issues_20251024.xlsx"
+output_file_name = "Data360_P3_Prosperity_metadata_issues_20251024.xlsx"
 if os.path.exists(output_file_name):
     output_df = pd.read_excel(output_file_name)
 else:
