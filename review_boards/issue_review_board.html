@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Metadata Issue Review Board</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<style>
+  :root{
+    --bg:#ffffff; --panel:#f7f9fc; --ink:#111; --muted:#555;
+    --line:#1b85c9; --line-2:#26a3e2; --bad:#e74c3c; --good:#28a745;
+  }
+  *{ box-sizing:border-box }
+  body{ margin:0; background:var(--bg); color:var(--ink);
+        font:16px/1.6 Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial }
+  .container{ max-width:1200px; margin:28px auto; padding:0 16px }
+  h2{ margin:0 0 8px 4px; color:var(--line); font-weight:700 }
+  .card{ border:1px solid var(--line); background:var(--panel); margin-bottom:18px }
+  table{ width:100%; border-collapse:collapse }
+  thead th{ text-align:left; font-weight:700; color:var(--ink); background:#e8f4fc }
+  tbody tr{ cursor:pointer; transition:background .15s ease }
+  tbody tr:hover{ background:rgba(37,182,230,.08) }
+  tbody tr.active{ outline:2px solid var(--line-2); background:rgba(37,182,230,.12) }
+  td, th{ padding:12px 10px; border-bottom:1px solid var(--line) }
+  .small{ color:var(--muted); font-size:.92rem }
+
+  .scrollable-table{
+    max-height: 250px; /* roughly 5 rows visible */
+    overflow-y: auto;
+    display: block;
+  }
+
+  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:18px }
+  .panel{ border:1px solid var(--line); background:var(--panel); min-height:280px }
+  .panel h3{ margin:0; background:linear-gradient(90deg,var(--line),var(--line-2));
+             color:#fff; padding:8px 12px; font-size:1rem; font-weight:600 }
+  .content{ padding:16px; white-space:pre-wrap; overflow:auto; max-height:520px }
+
+  .token{ padding:2px 3px; border-radius:4px; margin:0 1px 2px 0; display:inline-block; white-space:pre-wrap }
+  .add{ background:rgba(40,167,69,.15); outline:1px solid var(--good) }
+  .del{ background:rgba(231,76,60,.15); outline:1px solid var(--bad) }
+
+  .legend{ display:flex; gap:16px; align-items:center; margin:10px 0 2px 0; color:var(--muted); font-size:.9rem }
+  .swatch{ width:12px; height:12px; border-radius:3px; display:inline-block; vertical-align:middle }
+  .swatch.add{ background:var(--good) } .swatch.del{ background:var(--bad) }
+  .key{ color:var(--line); font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:.95rem }
+</style>
+</head>
+<body>
+<div id="app" class="container">
+
+  <!-- Metadata Projects -->
+  <h2>Metadata Projects</h2>
+  <div class="card">
+    <div class="scrollable-table">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:72px">#</th>
+            <th>Metadata Project</th>
+            <th style="width:160px">Issues</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(proj, i) in findings" :key="i"
+              :class="{active: i === selectedProjectIndex}" @click="selectProject(i)">
+            <td><strong>{{ i+1 }}</strong></td>
+            <td>{{ proj.metadata_project }}</td>
+            <td>{{ proj.issue_list.length }}</td>
+          </tr>
+          <tr v-if="!findings.length">
+            <td colspan="3" class="small" style="padding:20px">No projects.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Detected Issues -->
+  <h2>Detected Issues</h2>
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:72px">#</th>
+          <th>Issue</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="(row, i) in issues" :key="i"
+            :class="{active: i === selectedIssueIndex}" @click="selectIssue(i)">
+          <td><strong>{{ i+1 }}</strong></td>
+          <td>
+            <div>{{ row.detected_issue }}</div>
+            <div class="small" v-if="firstKey(row.current_metadata)">
+              Key: <span class="key">{{ firstKey(row.current_metadata) }}</span>
+            </div>
+          </td>
+        </tr>
+        <tr v-if="!issues.length">
+          <td colspan="2" class="small" style="padding:20px">Select a project to view its issues.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Diff -->
+  <div class="grid" v-if="activeIssue">
+    <div class="panel">
+      <h3>Current Metadata</h3>
+      <div class="content" v-html="diffHtml.current"></div>
+    </div>
+    <div class="panel">
+      <h3>Suggested Metadata</h3>
+      <div class="content" v-html="diffHtml.suggested"></div>
+    </div>
+  </div>
+
+  <div class="legend" v-if="activeIssue">
+    <span><span class="swatch del"></span> different in current</span>
+    <span><span class="swatch add"></span> different in suggested</span>
+  </div>
+</div>
+
+<script>
+const { createApp } = Vue;
+
+createApp({
+  data(){
+    return {
+      selectedProjectIndex: 0,
+      selectedIssueIndex: 0,
+      findings: [
+        {
+          "metadata_project": "[289] GDP per unit of energy use (constant 2021 PPP $ per kg of oil equivalent)",
+          "issue_list": [
+            {
+              "detected_issue": "Base year / PPP is inconsistent: name and measurement_unit state 2021 while base_period and the source indicator name state 2017.",
+              "current_metadata": {
+                "series_description.base_period": "2017"
+              },
+              "suggested_metadata": {
+                "series_description.base_period": "2021"
+              }
+            },
+            {
+              "detected_issue": "Producer / authoring entity names are inconsistent: series_description.authoring_entity lists 'World Bank Development Data Group' while metadata_information.producers lists 'Development Economics Data Group'.",
+              "current_metadata": {
+                "metadata_information.producers[0].name": "Development Economics Data Group"
+              },
+              "suggested_metadata": {
+                "metadata_information.producers[0].name": "World Bank Development Data Group"
+              }
+            }
+          ]
+        },
+        {
+          "metadata_project": "[333] Bird species, threatened",
+          "issue_list": [
+            {
+              "detected_issue": "definition_long uses nonstandard or incorrect IUCN category terms ('rare, indeterminate, out of danger, or insufficiently known') and misstates which categories are 'threatened'.",
+              "current_metadata": {
+                "series_description.definition_long": "Birds are listed for countries included within their breeding or wintering ranges. Threatened species are the number of species classified by the IUCN as endangered, vulnerable, rare, indeterminate, out of danger, or insufficiently known."
+              },
+              "suggested_metadata": {
+                "series_description.definition_long": "Birds are listed for countries included within their breeding or wintering ranges. Threatened species are species classified by the IUCN Red List as Critically Endangered (CR), Endangered (EN), or Vulnerable (VU). If listing all IUCN categories, use the official names: Extinct (EX), Extinct in the Wild (EW), Critically Endangered (CR), Endangered (EN), Vulnerable (VU), Near Threatened (NT), Least Concern (LC), Data Deficient (DD), Not Evaluated (NE)."
+              }
+            },
+            {
+              "detected_issue": "methodology contains a typo ('threated' instead of 'threatened').",
+              "current_metadata": {
+                "series_description.methodology": "Species assessed as Critically Endangered (CR), Endangered (EN) or Vulnerable (VU) are referred to as \"threatened\" species. The International Union for Conservation of Nature (IUCN) Red List of Threatened Species collects and disseminates information on the global threated species. Proportion of threatened species is only reported for the more completely evaluated groups (i.e., >90% of species evaluated). Also, the reported percentage of threatened species for each group is presented as a best estimate within a range of possible values bounded by lower and upper estimates: Lower estimate = % threatened extant species if all Data Deficient species are not threatened, i.e., (CR + EN + VU) / (total assessed - EX). Best estimate = % threatened extant species if Data Deficient species are equally threatened as data sufficient species, i.e., (CR + EN + VU) / (total assessed - EX - DD). Upper estimate = % threatened extant species if all Data Deficient species are threatened, i.e., (CR + EN + VU + DD) / (total assessed - EX). Additional information on ecology and habitat preferences, threats, and conservation action are also collated and assessed as part of Red List process."
+              },
+              "suggested_metadata": {
+                "series_description.methodology": "Species assessed as Critically Endangered (CR), Endangered (EN) or Vulnerable (VU) are referred to as \"threatened\" species. The International Union for Conservation of Nature (IUCN) Red List of Threatened Species collects and disseminates information on the global threatened species. Proportion of threatened species is only reported for the more completely evaluated groups (i.e., >90% of species evaluated). Also, the reported percentage of threatened species for each group is presented as a best estimate within a range of possible values bounded by lower and upper estimates: Lower estimate = % threatened extant species if all Data Deficient species are not threatened, i.e., (CR + EN + VU) / (total assessed - EX). Best estimate = % threatened extant species if Data Deficient species are equally threatened as data sufficient species, i.e., (CR + EN + VU) / (total assessed - EX - DD). Upper estimate = % threatened extant species if all Data Deficient species are threatened, i.e., (CR + EN + VU + DD) / (total assessed - EX). Additional information on ecology and habitat preferences, threats, and conservation action are also collated and assessed as part of the Red List process."
+              }
+            },
+            {
+              "detected_issue": "relevance text omits Critically Endangered (CR) when describing which categories constitute 'threatened', creating inconsistency with the methodology field.",
+              "current_metadata": {
+                "series_description.relevance": "As threats to biodiversity mount, the international community is increasingly focusing on conserving diversity. The Red List Index for the world's birds shows that there has been a steady and continuing deterioration in the threat status of the world's birds since 1988, when the first complete global assessment was carried out. The number of threatened species is an important measure of the immediate need for conservation in an area. Global analyses of the status of threatened species have been carried out for few groups of organisms. Only for mammals, birds, and amphibians has the status of virtually all known species been assessed. Threatened species are defined using the International Union for Conservation of Nature's (IUCN) classification: endangered (in danger of extinction and unlikely to survive if causal factors continue operating) and vulnerable (likely to move into the endangered category in the near future if causal factors continue operating). The International Union for Conservation of Nature (IUCN) Red List of Threatened Species is widely recognized as the most comprehensive, objective global approach for evaluating the conservation status of plant and animal species. The IUCN guides conservation activities of governments, NGOs and scientific institutions. The IUCN draws on and mobilizes a network of scientists and partner organizations working in almost every country in the world, who collectively hold what is likely the most complete scientific knowledge base on the biology and conservation status of species. Globally, threatened birds occur worldwide - nearly all countries support one or more threatened bird species. Small islands hold disproportionately high numbers of Globally Threatened Birds, supporting over half of threatened species. Threatened seabirds are found throughout the world's oceans. The most important threats to the world's birds are the spread of agriculture and an ever increasing human use of biological resources. Direct threats to species are the proximate human activities or processes that have impacted, are impacting, or may impact the status of the taxon being assessed (e.g., unsustainable fishing or logging). Direct threats are synonymous with sources of stress and proximate pressures. Threats can be past (historical, unlikely to return or historical, likely to return), ongoing, and/or likely to occur in the future."
+              },
+              "suggested_metadata": {
+                "series_description.relevance": "As threats to biodiversity mount, the international community is increasingly focusing on conserving diversity. The Red List Index for the world's birds shows that there has been a steady and continuing deterioration in the threat status of the world's birds since 1988, when the first complete global assessment was carried out. The number of threatened species is an important measure of the immediate need for conservation in an area. Global analyses of the status of threatened species have been carried out for few groups of organisms. Only for mammals, birds, and amphibians has the status of virtually all known species been assessed. Threatened species are defined using the International Union for Conservation of Nature's (IUCN) classification: Critically Endangered (CR), Endangered (EN), and Vulnerable (VU). For completeness, other IUCN categories include Near Threatened (NT), Least Concern (LC), Data Deficient (DD), Extinct (EX), Extinct in the Wild (EW), and Not Evaluated (NE). The International Union for Conservation of Nature (IUCN) Red List of Threatened Species is widely recognized as the most comprehensive, objective global approach for evaluating the conservation status of plant and animal species. The IUCN guides conservation activities of governments, NGOs and scientific institutions. The IUCN draws on and mobilizes a network of scientists and partner organizations working in almost every country in the world, who collectively hold what is likely the most complete scientific knowledge base on the biology and conservation status of species. Globally, threatened birds occur worldwide - nearly all countries support one or more threatened bird species. Small islands hold disproportionately high numbers of Globally Threatened Birds, supporting over half of threatened species. Threatened seabirds are found throughout the world's oceans. The most important threats to the world's birds are the spread of agriculture and an ever increasing human use of biological resources. Direct threats to species are the proximate human activities or processes that have impacted, are impacting, or may impact the status of the taxon being assessed (e.g., unsustainable fishing or logging). Direct threats are synonymous with sources of stress and proximate pressures. Threats can be past (historical, unlikely to return or historical, likely to return), ongoing, and/or likely to occur in the future."
+              }
+            }
+          ]
+        },
+        {
+          "metadata_project": "[861] Literacy rate, youth female (% of females ages 15-24)",
+          "issue_list": [
+            {
+              "detected_issue": "Typographical error in limitation field ('Ant' instead of 'And').",
+              "current_metadata": {
+                "series_description.limitation": "In practice, literacy is difficult to measure. Estimating literacy rates requires census or survey measurements under controlled conditions. Many countries report the number of literate people from self-reported data. Some use educational attainment data as a proxy but apply different lengths of school attendance or levels of completion. Ant there is a trend among recent national and international surveys toward using a direct reading test of literacy skills. Because definitions and methods of data collection differ across countries, data should be used cautiously."
+              },
+              "suggested_metadata": {
+                "series_description.limitation": "In practice, literacy is difficult to measure. Estimating literacy rates requires census or survey measurements under controlled conditions. Many countries report the number of literate people from self-reported data. Some use educational attainment data as a proxy but apply different lengths of school attendance or levels of completion. And there is a trend among recent national and international surveys toward using a direct reading test of literacy skills. Because definitions and methods of data collection differ across countries, data should be used cautiously."
+              }
+            },
+            {
+              "detected_issue": "Grammatical subject-verb disagreement in relevance field ('Literate women implies').",
+              "current_metadata": {
+                "series_description.relevance": "Literacy rate is an outcome indicator to evaluate educational attainment. This data can predict the quality of future labor force and can be used in ensuring policies for life skills for men and women.\r\r\r\r\r\r\r\r\n\r\r\r\r\r\r\r\r\nIt can be also used as a proxy instrument to see the effectiveness of education system; a high literacy rate suggests the capacity of an education system to provide a large population with opportunities to acquire literacy skills. The accumulated achievement of education is fundamental for further intellectual growth and social and economic development, although it doesn't necessarily ensure the quality of education.\r\r\r\r\r\r\r\r\n\r\r\r\r\r\r\r\r\nLiterate women implies that they can seek and use information for the betterment of the health, nutrition and education of their household members. Literate women are also empowered to play a meaningful role."
+              },
+              "suggested_metadata": {
+                "series_description.relevance": "Literacy rate is an outcome indicator to evaluate educational attainment. This data can predict the quality of future labor force and can be used in ensuring policies for life skills for men and women.\r\r\r\r\r\r\r\r\n\r\r\r\r\r\r\r\r\nIt can be also used as a proxy instrument to see the effectiveness of education system; a high literacy rate suggests the capacity of an education system to provide a large population with opportunities to acquire literacy skills. The accumulated achievement of education is fundamental for further intellectual growth and social and economic development, although it doesn't necessarily ensure the quality of education.\r\r\r\r\r\r\r\r\n\r\r\r\r\r\r\r\r\nBeing literate implies that women can seek and use information for the betterment of the health, nutrition and education of their household members. Literate women are also empowered to play a meaningful role."
+              }
+            },
+            {
+              "detected_issue": "framework.target_id contains a floating-point artifact instead of the canonical target identifier.",
+              "current_metadata": {
+                "series_description.framework.target_id": "4.5999999999999899"
+              },
+              "suggested_metadata": {
+                "series_description.framework.target_id": "4.6"
+              }
+            },
+            {
+              "detected_issue": "framework.custodian appears incorrect or nonstandard for SDG indicator 4.6.2.",
+              "current_metadata": {
+                "series_description.framework.custodian": "Education Data and Statistics Commission (EDSC)"
+              },
+              "suggested_metadata": {
+                "series_description.framework.custodian": "UNESCO Institute for Statistics (UIS)"
+              }
+            }
+          ]
+        },
+        {
+          "metadata_project": "[1036] Number of under-five deaths",
+          "issue_list": [
+  {
+    "detected_issue": "alternate_identifiers entry refers to 'Mortality rate age 20-24', which is incorrect for the 'Number of under-five deaths' series.",
+    "current_metadata": {
+      "series_description.alternate_identifiers[0].name": "Mortality rate age 20-24"
+    },
+    "suggested_metadata": {
+      "series_description.alternate_identifiers[0].name": "Number of under-five deaths"
+    }
+  },
+  {
+    "detected_issue": "measurement_unit is the vague value 'Unit' for a count of deaths; it should specify that values are counts of deaths.",
+    "current_metadata": {
+      "series_description.measurement_unit": "Unit"
+    },
+    "suggested_metadata": {
+      "series_description.measurement_unit": "deaths (count)"
+    }
+  }
+]
+        },
+        {
+          "metadata_project": "[2227] Stunting prevalence among children under 5 years of age (% height-for-age <-2 SD)",
+          "issue_list": [
+            {
+              "detected_issue": "Dimension mapping error: the 'Year' dimension's description is 'Country/economy, Region', which describes geographic scope rather than temporal coverage.",
+              "current_metadata": {
+                "series_description.dimensions[1].description": "Country/economy, Region"
+              },
+              "suggested_metadata": {
+                "series_description.dimensions[1].description": "Calendar or survey year (e.g., 1983–2022); represents the time period for each data observation."
+              }
+            },
+            {
+              "detected_issue": "Ambiguous 'Cluster' dimension: label 'Cluster' has description 'Total, Male, Female', which duplicates the 'Sex' options and is likely incorrect or unclear.",
+              "current_metadata": {
+                "series_description.dimensions[2].description": "Total, Male, Female"
+              },
+              "suggested_metadata": {
+                "series_description.dimensions[2].description": "Clarify meaning or remove: if 'Cluster' refers to survey cluster identifiers, use 'Survey cluster identifier (e.g., cluster ID)'; if not applicable for this series, remove this dimension."
+              }
+            },
+            {
+              "detected_issue": "Stray asterisk in methodology text: 'reference* population' includes an asterisk with no corresponding footnote or explanation.",
+              "current_metadata": {
+                "series_description.methodology": "Number of under-fives falling below minus 2 standard deviations (moderate and severe) and minus 3 standard deviations (severe) from the median height-for-age of the reference* population / Children under 5 years of age in the surveyed population.\nSurvey estimates are based on standardized methodology using the WHO Child Growth Standards as described elsewhere. Global and regional estimates are based on methodology outlined in UNICEF-WHO-The World Bank: Joint child malnutrition estimates – Levels and trends.\nThe standard analysis approach to construct the joint data set aims for a maximum comparability of country estimates. For the inclusion of survey estimates into the JME dataset, the inter-agency group applies survey quality assessment criteria. When there is insufficient documentation, the survey is not included until information becomes available. When raw data are available, and there is a question about the analysis approach, data re-analysis is performed following the standard methodology. Discrepancies between results from the standardised approach and those reported may occur for various reasons, for example, the use of different standards for z-score calculations, imputation of the day of birth when missing, the use of rounded age in months, the use of different flagging systems for data exclusion. For surveys based on the previous NCHS/WHO references, and for which raw data are not available, a method for converting the z-scores to be based on the WHO Child Growth Standards is applied. In addition, when surveys do not cover the age interval 0-<5 years, or are only representative of the rural areas, an adjustment based on other surveys for the same country, is performed. Any adjustment or conversion is transparently stated in the annotated joint data set.\n"
+              },
+              "suggested_metadata": {
+                "series_description.methodology": "Number of under-fives falling below minus 2 standard deviations (moderate and severe) and minus 3 standard deviations (severe) from the median height-for-age of the reference population / Children under 5 years of age in the surveyed population.\nSurvey estimates are based on standardized methodology using the WHO Child Growth Standards as described elsewhere. Global and regional estimates are based on methodology outlined in UNICEF-WHO-The World Bank: Joint child malnutrition estimates – Levels and trends.\nThe standard analysis approach to construct the joint data set aims for a maximum comparability of country estimates. For the inclusion of survey estimates into the JME dataset, the inter-agency group applies survey quality assessment criteria. When there is insufficient documentation, the survey is not included until information becomes available. When raw data are available, and there is a question about the analysis approach, data re-analysis is performed following the standard methodology. Discrepancies between results from the standardised approach and those reported may occur for various reasons, for example, the use of different standards for z-score calculations, imputation of the day of birth when missing, the use of rounded age in months, the use of different flagging systems for data exclusion. For surveys based on the previous NCHS/WHO references, and for which raw data are not available, a method for converting the z-scores to be based on the WHO Child Growth Standards is applied. In addition, when surveys do not cover the age interval 0-<5 years, or are only representative of the rural areas, an adjustment based on other surveys for the same country, is performed. Any adjustment or conversion is transparently stated in the annotated joint data set.\n"
+              }
+            },
+            {
+              "detected_issue": "Grammar error in limitation text: 'None of the two sources of errors have been fully taken into account...' is awkward/incorrect.",
+              "current_metadata": {
+                "series_description.limitation": "Survey estimates come with levels of uncertainty due to both sampling error and non-sampling error (e.g. measurement technical error, recording error etc.,). None of the two sources of errors have been fully taken into account for deriving estimates neither at country nor at regional and global levels."
+              },
+              "suggested_metadata": {
+                "series_description.limitation": "Survey estimates come with levels of uncertainty due to both sampling error and non-sampling error (e.g. measurement technical error, recording error). Neither source of error has been fully taken into account for deriving estimates at country, regional or global levels."
+              }
+            }
+          ]
+        },
+        {
+          "metadata_project": "[2908] Percentage of population who have gone without enough food",
+          "issue_list": [
+            {
+              "detected_issue": "Keyword contains an obvious typo.",
+              "current_metadata": {
+                "series_description.keywords[0].name": "Dood security"
+              },
+              "suggested_metadata": {
+                "series_description.keywords[0].name": "Food security"
+              }
+            },
+            {
+              "detected_issue": "License note includes a non-standard arbitration/mediation clause appended to CC BY 4.0, which is not part of the official license text.",
+              "current_metadata": {
+                "series_description.license[0].note": "This work is provided under a Creative Commons 4.0 Attribution International License, with the following mandatory and binding addition:i. Any and all disputes arising under this License that cannot be settled amicably shall be submitted to mediation in accordance with the WIPO Mediation Rules in effect at the time the work was published. If the request for mediation is not resolved within forty-five (45) days of the request, either You or the Licensor may, pursuant to a notice of arbitration communicated by reasonable means to the other party refer the dispute to final and binding arbitration to be conducted in accordance with UNCITRAL Arbitration Rules as then in force. The arbitral tribunal shall consist of a sole arbitrator and the language of the proceedings shall be English unless otherwise agreed. The place of arbitration shall be where the Licensor has its headquarters. The arbitral proceedings shall be conducted remotely (e.g., via telephone conference or written submissions) whenever practicable, or held at the World Bank headquarters in Washington DC."
+              },
+              "suggested_metadata": {
+                "series_description.license[0].note": "This work is provided under a Creative Commons Attribution 4.0 International (CC BY 4.0) license. See https://creativecommons.org/licenses/by/4.0/ for the official license text."
+              }
+            }
+          ]
+        },
+        {
+          "metadata_project": "[14441] Container port throughput (TEU)",
+          "issue_list": [
+            {
+              "detected_issue": "Unit vs scale mismatch: measurement_unit lists a single TEU while definitions indicate values are in thousands.",
+              "current_metadata": {
+                "series_description.measurement_unit": "Twenty-foot Equivalent Unit"
+              },
+              "suggested_metadata": {
+                "series_description.measurement_unit": "TEU (20-foot equivalent unit, values in thousands)"
+              }
+            }
+          ]
+        },
+        {
+          "metadata_project": "[15262] Pesticides Use per area of cropland",
+          "issue_list": [
+            {
+              "detected_issue": "Top-level title is the placeholder 'untitled' while the series has a proper title; the top-level title should be the canonical dataset title.",
+              "current_metadata": {
+                "title": "untitled"
+              },
+              "suggested_metadata": {
+                "title": "Pesticides use per area of cropland"
+              }
+            },
+            {
+              "detected_issue": "Typo in limitation list: 'Saint Kits and Nevis' is incorrect.",
+              "current_metadata": {
+                "series_description.limitation": "Data for the following countries are currently not displayed for the indicator Use per area of cropland because quality checks are being conducted on their data series: Antigua and Barbuda, Bahamas, Barbados, Bermuda, Aruba, Cayman Islands, Faroe Islands, Kuwait, Maldives, Nauru, Northern Mariana Islands, Qatar, Saint Kits and Nevis, Saint Vincent and the Grenadines, Seychelles, Tokelau, Turks and Caicos Islands, British Virgin Islands."
+              },
+              "suggested_metadata": {
+                "series_description.limitation": "Data for the following countries are currently not displayed for the indicator Use per area of cropland because quality checks are being conducted on their data series: Antigua and Barbuda, Bahamas, Barbados, Bermuda, Aruba, Cayman Islands, Faroe Islands, Kuwait, Maldives, Nauru, Northern Mariana Islands, Qatar, Saint Kitts and Nevis, Saint Vincent and the Grenadines, Seychelles, Tokelau, Turks and Caicos Islands, British Virgin Islands."
+              }
+            },
+            {
+              "detected_issue": "definition_long contains a truncated or incorrect phrase 'including vectors of human or animal disease, unwanted.' which appears incomplete.",
+              "current_metadata": {
+                "series_description.definition_long": "The Pesticides Use database includes data on insecticides, fungicides, herbicides, disinfectants and any substance or mixture of substances intended for preventing, destroying or controlling any pest, including vectors of human or animal disease, unwanted. Pesticides (total) is the sum of active ingredients in the following categories of pesticides: Fungicides & Bactericides, Herbicides, Insecticides, Plant Growth Regulators, Seed Treatment Fungicides, Seed Treatment Insecticides, Mineral Oils, Rodenticides, and Disinfectants and Other pesticides, nes (not elsewhere specified.)"
+              },
+              "suggested_metadata": {
+                "series_description.definition_long": "The Pesticides Use database includes data on insecticides, fungicides, herbicides, disinfectants and any substance or mixture of substances intended for preventing, destroying or controlling any pest, including vectors of human or animal disease, and unwanted organisms. Pesticides (total) is the sum of active ingredients in the following categories of pesticides: Fungicides & Bactericides, Herbicides, Insecticides, Plant Growth Regulators, Seed Treatment Fungicides, Seed Treatment Insecticides, Mineral Oils, Rodenticides, and Disinfectants and Other pesticides, n.e.s. (not elsewhere specified)."
+              }
+            }
+          ]
+        },
+        {
+          "metadata_project": "[15474] Carbon dioxide (CO2) emissions (total) excluding LULUCF (Mt CO2e)",
+          "issue_list": [
+            {
+              "detected_issue": "Series name indicates CO2-only while definition and units indicate CO2-equivalent (GHG) — name should reflect GHG CO2‑eq or metadata should be made consistently CO2-only.",
+              "current_metadata": {
+                "series_description.name": "Carbon dioxide (CO2) emissions (total) excluding LULUCF (Mt CO2e)"
+              },
+              "suggested_metadata": {
+                "series_description.name": "Greenhouse gas (GHG) emissions (total) excluding LULUCF (Mt CO2‑eq)"
+              }
+            },
+            {
+              "detected_issue": "Measurement unit abbreviation is inconsistent with other fields (name uses 'Mt CO2e', text uses 'CO₂-equivalent'); standardize unit notation.",
+              "current_metadata": {
+                "series_description.measurement_unit": "Mt CO2eq"
+              },
+              "suggested_metadata": {
+                "series_description.measurement_unit": "Mt CO2‑eq"
+              }
+            },
+            {
+              "detected_issue": "Second source entry lists IEA but points to the EDGAR URI (mismatch between organization/publisher and URI); the IEA entry also lacks an explicit 'name' field.",
+              "current_metadata": {
+                "series_description.sources[1].uri": "https://edgar.jrc.ec.europa.eu/dataset_ghg2024"
+              },
+              "suggested_metadata": {
+                "series_description.sources[1].uri": "https://www.iea.org"
+              }
+            },
+            {
+              "detected_issue": "Definition contains a typographical error: double period after 'excluding LULUCF'.",
+              "current_metadata": {
+                "series_description.definition_long": "A measure of annual emissions of carbon dioxide (CO2), one of the six Kyoto greenhouse gases (GHG), from the agriculture, energy, waste, and industrial sectors, excluding LULUCF.. The measure is standardized to carbon dioxide equivalent values using the Global Warming Potential (GWP) factors of IPCC's 5th Assessment Report (AR5)."
+              },
+              "suggested_metadata": {
+                "series_description.definition_long": "A measure of annual emissions of carbon dioxide (CO2), one of the six Kyoto greenhouse gases (GHG), from the agriculture, energy, waste, and industrial sectors, excluding LULUCF. The measure is standardized to carbon dioxide equivalent values using the Global Warming Potential (GWP) factors of IPCC's 5th Assessment Report (AR5)."
+              }
+            },
+            {
+              "detected_issue": "Limitation text groups methane (CH4) with fluorinated gases in a way that could be read as classifying CH4 as a fluorinated gas; phrasing should separate methane from fluorinated gases.",
+              "current_metadata": {
+                "series_description.limitation": "Global GHG emissions are currently not directly measurable, but approaches for their estimation exist, and numerous sources exist to supply data for this indicator. Reputable scientific organizations produce these data for use for research, policy analysis, climate negotiations, and broader public communications. The estimated accuracy from fossil fuel combustion and industrial processes are quite high, as quantities of fossil fuels and other emissive materials (such as cement and steel) produced are well known. For these sectors, emissions estimates are roughly accurate to within 10% when aggregated to the global level and between 4% and 35% at the country level (Crippa et al., 2023). For non- combustion and non- industrial process emissions, the accuracy is lower. Agricultural emissions, for example, depend upon many factors including the type of crops grown and livestock raised, specific agricultural practices, and other climate and non-climate factors. For these emissions, the accuracy is lower—around 30% for CH4 and fluorinated gases (HFCs, PFCs, and SF6)."
+              },
+              "suggested_metadata": {
+                "series_description.limitation": "Global GHG emissions are currently not directly measurable, but approaches for their estimation exist, and numerous sources exist to supply data for this indicator. Reputable scientific organizations produce these data for use for research, policy analysis, climate negotiations, and broader public communications. The estimated accuracy from fossil fuel combustion and industrial processes are quite high, as quantities of fossil fuels and other emissive materials (such as cement and steel) produced are well known. For these sectors, emissions estimates are roughly accurate to within 10% when aggregated to the global level and between 4% and 35% at the country level (Crippa et al., 2023). For non-combustion and non-industrial process emissions, the accuracy is lower. Agricultural emissions, for example, depend upon many factors including the type of crops grown and livestock raised, specific agricultural practices, and other climate and non-climate factors. For these emissions, the accuracy is lower—around 30% for methane (CH4), and around 30% for fluorinated gases (HFCs, PFCs, and SF6)."
+              }
+            },
+            {
+              "detected_issue": "Methodology uses inconsistent unit terms ('kg, tons, or CO₂-equivalent'); prefer consistent metric terminology and explicit CO2-equivalent unit.",
+              "current_metadata": {
+                "series_description.methodology": "EDGAR compiles data from multiple authoritative sources, including: International Energy Agency (IEA) – Energy consumption data, United Nations Framework Convention on Climate Change (UNFCCC) – National GHG inventories, Food and Agriculture Organization (FAO) – Agricultural emissions, World Bank & National Statistics Offices – Socioeconomic and industrial data, Scientific Literature & IPCC Guidelines – Emission factors and methodologies. \r\r\r\r\r\r\nEDGAR follows the IPCC (Intergovernmental Panel on Climate Change) Guidelines for National Greenhouse Gas Inventories to estimate emissions. The core equation is:\r\r\r\r\r\r\n𝐸 =𝐴×𝐸𝐹\r\r\r\r\r\r\nWhere:\r\r\r\r\r\r\nE = Total emissions (kg, tons, or CO₂-equivalent)\r\r\r\r\r\r\nA = Activity data (e.g., fuel consumption, production levels)\r\r\r\r\r\r\nEF = Emission factor (kg of pollutant per unit of activity)\r\r\r\r\r\r\n\r\r\r\r\r\r\nDepending on the pollutant, different tiers of complexity are used:\r\r\r\r\r\r\nTier 1 – Default IPCC emission factors (simple estimation)\r\r\r\r\r\r\nTier 2 – Country/region-specific emission factors\r\r\r\r\r\r\nTier 3 – Detailed process-based models (highest accuracy)"
+              },
+              "suggested_metadata": {
+                "series_description.methodology": "EDGAR compiles data from multiple authoritative sources, including: International Energy Agency (IEA) – Energy consumption data, United Nations Framework Convention on Climate Change (UNFCCC) – National GHG inventories, Food and Agriculture Organization (FAO) – Agricultural emissions, World Bank & National Statistics Offices – Socioeconomic and industrial data, Scientific Literature & IPCC Guidelines – Emission factors and methodologies.\n\nEDGAR follows the IPCC (Intergovernmental Panel on Climate Change) Guidelines for National Greenhouse Gas Inventories to estimate emissions. The core equation is:\n\nE = A × EF\n\nWhere:\n\nE = Total emissions (kg, tonnes (t), or CO2-equivalent (t CO2‑eq))\n\nA = Activity data (e.g., fuel consumption, production levels)\n\nEF = Emission factor (kg of pollutant per unit of activity)\n\nDepending on the pollutant, different tiers of complexity are used:\n\nTier 1 – Default IPCC emission factors (simple estimation)\n\nTier 2 – Country/region-specific emission factors\n\nTier 3 – Detailed process-based models (highest accuracy)"
+              }
+            }
+          ]
+        },
+        {
+          "metadata_project": "[15512] Nitrous oxide (N2O) emissions (total) excluding LULUCF (% change from 1990)",
+          "issue_list": [
+            {
+              "detected_issue": "definition_long contains duplicated wording, awkward grammar, and an extra period after 'excluding LULUCF..'.",
+              "current_metadata": {
+                "series_description.definition_long": "Change of emissions (as %) of current year with respect to emissions in baseline year 1990 emissions of nitrous oxide (N2O), one of the six Kyoto greenhouse gases (GHG), from the agriculture, energy, waste, and industrial sectors, excluding LULUCF.. The measure is standardized to carbon dioxide equivalent values using the Global Warming Potential (GWP) factors of IPCC's 5th Assessment Report (AR5). Negative values indicate that the emission level for that year is lower than the emissions level in 1990."
+              },
+              "suggested_metadata": {
+                "series_description.definition_long": "Percent change in nitrous oxide (N2O) emissions in the current year relative to the baseline year 1990, excluding emissions from land use, land-use change and forestry (LULUCF). Values are expressed as percent change from 1990 and are standardized to CO2-equivalent using the IPCC AR5 Global Warming Potential (GWP) factors. Negative values indicate that the emission level for that year is lower than in 1990."
+              }
+            },
+            {
+              "detected_issue": "sources array contains a duplicated/mislabeled entry: the second entry lists organization 'International Energy Agency (IEA)' but its uri and publisher point to EDGAR/JRC, creating an inconsistency or duplication.",
+              "current_metadata": {
+                "series_description.sources": [
+                  {
+                    "name": "EDGAR (Emissions Database for Global Atmospheric Research) Community GHG Database",
+                    "organization": "Joint Research Centre (JRC) - European Commission",
+                    "uri": "https://edgar.jrc.ec.europa.eu/dataset_ghg2024",
+                    "publisher": "JRC European Commission",
+                    "publication_date": "2024"
+                  },
+                  {
+                    "organization": "International Energy Agency (IEA)",
+                    "uri": "https://edgar.jrc.ec.europa.eu/dataset_ghg2024",
+                    "publisher": "JRC European Commission",
+                    "publication_date": "2024",
+                    "name": "EDGAR (Emissions Database for Global Atmospheric Research) Community GHG Database"
+                  }
+                ]
+              },
+              "suggested_metadata": {
+                "series_description.sources": [
+                  {
+                    "name": "EDGAR (Emissions Database for Global Atmospheric Research) Community GHG Database",
+                    "organization": "Joint Research Centre (JRC) - European Commission",
+                    "uri": "https://edgar.jrc.ec.europa.eu/dataset_ghg2024",
+                    "publisher": "JRC European Commission",
+                    "publication_date": "2024"
+                  }
+                ]
+              }
+            },
+            {
+              "detected_issue": "relevance text contains the typo '2deg C' instead of a standard temperature notation.",
+              "current_metadata": {
+                "series_description.relevance": "Anthropogenic (human-caused) emissions of global greenhouse gases, including carbon dioxide (CO2), methane (CH4), nitrous oxide (N2O) and F-gases, lead to an increase of the concentration of greenhouse gases in the atmosphere, which in turn causes atmospheric warming by trapping heat in the atmosphere (greenhouse gas effect). Atmospheric warming leads to climatic changes causing more frequent and extreme weather events and higher temperatures globally, leading to large impacts across the globe and particularly in developing countries that often have a limited means to adapt and build resilience. The international scientific community has warned that emissions need to decline to net zero by the middle of the 21st century to limit global warming to well below a 2deg C increase and help avoid the most consequential climate change impacts. \\r\\n\\r\\n\\r\\n\\r\\n\\r\\n\\r\\n\\r\\n\\r\\n\\r\\n\\r\\n\\r\\n\\r\\n\\r\\nClimate change is having a disproportionate impact on developing countries and if unabated will not only reverse past development progress and hinder poverty reduction but will also make future development more costly. Country level assessments of the potential climate change impacts on specific developing countries, performed as part of the World Bank’s Country Climate and Development Reports (CCDRs), show that climate change will have a significant impact on developing countries’ economies, ranging from about 0.5% of GDP for higher income developing countries to over 13% for the lowest income developing countries. The costs of partial adaptation to these changes will be significant as well -- ranging between 1 and 10% of developing countries’ GDP."
+              },
+              "suggested_metadata": {
+                "series_description.relevance": "Anthropogenic (human-caused) emissions of global greenhouse gases, including carbon dioxide (CO2), methane (CH4), nitrous oxide (N2O) and F-gases, lead to an increase of the concentration of greenhouse gases in the atmosphere, which in turn causes atmospheric warming by trapping heat in the atmosphere (greenhouse gas effect). Atmospheric warming leads to climatic changes causing more frequent and extreme weather events and higher temperatures globally, leading to large impacts across the globe and particularly in developing countries that often have a limited means to adapt and build resilience. The international scientific community has warned that emissions need to decline to net zero by the middle of the 21st century to limit global warming to well below a 2°C increase and help avoid the most consequential climate change impacts. Climate change is having a disproportionate impact on developing countries and if unabated will not only reverse past development progress and hinder poverty reduction but will also make future development more costly. Country level assessments of the potential climate change impacts on specific developing countries, performed as part of the World Bank’s Country Climate and Development Reports (CCDRs), show that climate change will have a significant impact on developing countries’ economies, ranging from about 0.5% of GDP for higher income developing countries to over 13% for the lowest income developing countries. The costs of partial adaptation to these changes will be significant as well -- ranging between 1 and 10% of developing countries’ GDP."
+              }
+            },
+            {
+              "detected_issue": "limitation text groups methane (CH4) together with 'fluorinated gases' in a way that is misleading; CH4 is not a fluorinated gas and the sentence should be clearer.",
+              "current_metadata": {
+                "series_description.limitation": "Global GHG emissions are currently not directly measurable, but approaches for their estimation exist, and numerous sources exist to supply data for this indicator. Reputable scientific organizations produce these data for use for research, policy analysis, climate negotiations, and broader public communications. The estimated accuracy from fossil fuel combustion and industrial processes are quite high, as quantities of fossil fuels and other emissive materials (such as cement and steel) produced are well known. For these sectors, emissions estimates are roughly accurate to within 10% when aggregated to the global level and between 4% and 35% at the country level (Crippa et al., 2023). For non- combustion and non- industrial process emissions, the accuracy is lower. Agricultural emissions, for example, depend upon many factors including the type of crops grown and livestock raised, specific agricultural practices, and other climate and non-climate factors. For these emissions, the accuracy is lower—around 30% for CH4 and fluorinated gases (HFCs, PFCs, and SF6)."
+              },
+              "suggested_metadata": {
+                "series_description.limitation": "Global GHG emissions are currently not directly measurable, but approaches for their estimation exist, and numerous sources exist to supply data for this indicator. Reputable scientific organizations produce these data for use for research, policy analysis, climate negotiations, and broader public communications. The estimated accuracy from fossil fuel combustion and industrial processes are quite high, as quantities of fossil fuels and other emissive materials (such as cement and steel) produced are well known. For these sectors, emissions estimates are roughly accurate to within 10% when aggregated to the global level and between 4% and 35% at the country level (Crippa et al., 2023). For non-combustion and non-industrial process emissions, the accuracy is lower. Agricultural emissions, for example, depend upon many factors including the type of crops grown and livestock raised, specific agricultural practices, and other climate and non-climate factors. For these emissions, the accuracy is lower—around 30% for methane (CH4) and for fluorinated gases (HFCs, PFCs, SF6)."
+              }
+            }
+          ]
+        },
+      ]
+    };
+  },
+  computed:{
+    activeProject(){ return this.findings[this.selectedProjectIndex] || null; },
+    issues(){ return this.activeProject ? this.activeProject.issue_list : []; },
+    activeIssue(){ return this.issues[this.selectedIssueIndex] || null; },
+    diffHtml(){
+      if(!this.activeIssue) return { current:"", suggested:"" };
+      const curr = this.toValueString(this.firstValue(this.activeIssue.current_metadata));
+      const sugg = this.toValueString(this.firstValue(this.activeIssue.suggested_metadata));
+      return this.wordDiffHtml(curr, sugg);
+    }
+  },
+  methods:{
+    /* ---------- selection ---------- */
+    selectProject(i){ this.selectedProjectIndex=i; this.selectedIssueIndex=0; },
+    selectIssue(i){ this.selectedIssueIndex=i; },
+
+    /* ---------- value helpers ---------- */
+    firstKey(obj){ return obj ? Object.keys(obj)[0] : ""; },
+    firstValue(obj){ return obj ? obj[this.firstKey(obj)] : ""; },
+
+    toValueString(v){
+      // Strings: return as-is
+      if (typeof v === "string") return v;
+      // Everything else: stable, pretty JSON
+      try { return this.stableStringify(v, 2); }
+      catch { return String(v ?? ""); }
+    },
+
+    // Stable JSON stringify (sort keys recursively for deterministic diffs)
+    stableStringify(value, space = 2){
+      const seen = new WeakSet();
+      const sorter = (obj) => {
+        if (obj === null || typeof obj !== "object") return obj;
+        if (seen.has(obj)) return "[Circular]";
+        seen.add(obj);
+        if (Array.isArray(obj)) return obj.map(sorter);
+        const out = {};
+        Object.keys(obj).sort().forEach(k => { out[k] = sorter(obj[k]); });
+        return out;
+      };
+      return JSON.stringify(sorter(value), null, space);
+    },
+
+    /* ---------- diff (LCS) ---------- */
+    wordDiffHtml(a,b){
+      // Keep JSON line breaks and punctuation; diff on tokens
+      const A = this.tokenize(a), B = this.tokenize(b);
+      const n=A.length, m=B.length;
+      const dp=Array.from({length:n+1},()=>Array(m+1).fill(0));
+      for(let i=n-1;i>=0;i--) for(let j=m-1;j>=0;j--)
+        dp[i][j]=A[i]===B[j]?dp[i+1][j+1]+1:Math.max(dp[i+1][j],dp[i][j+1]);
+      const ops=[]; let i=0,j=0;
+      while(i<n&&j<m){
+        if(A[i]===B[j]) ops.push({t:'eq',a:A[i++],b:B[j++]});
+        else if(dp[i+1][j]>=dp[i][j+1]) ops.push({t:'del',a:A[i++]});
+        else ops.push({t:'add',b:B[j++]});
+      }
+      while(i<n) ops.push({t:'del',a:A[i++]});
+      while(j<m) ops.push({t:'add',b:B[j++]});
+
+      const span=(cls,t)=>`<span class="token ${cls}">${this.escape(t)}</span>`;
+      const plain=t=>`<span class="token">${this.escape(t)}</span>`;
+      let L="",R="";
+      ops.forEach(o=>{
+        if(o.t==='eq'){ L+=plain(o.a); R+=plain(o.b); }
+        else if(o.t==='del'){ L+=span('del',o.a); }
+        else if(o.t==='add'){ R+=span('add',o.b); }
+      });
+      // Preserve explicit newlines
+      const nl = this.escape("\n");
+      L=L.replaceAll(nl,"<br>");
+      R=R.replaceAll(nl,"<br>");
+      return { current:L, suggested:R };
+    },
+
+    tokenize(text){
+      // Make sure newlines stand on their own token to keep structure
+      return String(text)
+        .replace(/\r\n|\r/g,"\n")
+        .replace(/\n/g," \n ")
+        // .split(/(\s+|[{}[\],:]+|[.?!;()"'`<>/\\-]+)/g)
+        .split(/(\s+|[{}[\]]+|[<>\\-]+)/g)
+        .filter(x=>x!==undefined && x!=="" && !/^\s+$/.test(x));
+    },
+
+    escape(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+  },
+  mounted(){
+    if(this.findings.length){ this.selectedProjectIndex=0; this.selectedIssueIndex=0; }
+  }
+}).mount('#app');
+</script>
+</body>
+</html>
