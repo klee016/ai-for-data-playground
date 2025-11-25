@@ -130,7 +130,7 @@ def process_one(me_collection, me_project):
 
         # load agents manifest
         job = gradio_client.submit(
-            file_name="error_scanner_kam_20251023.yml",
+            file_name="error_scanner_kam_20251124.yml",
             session_id=session_id,
             api_name="/error_scanner__load_agents_manifest"
         )
@@ -140,7 +140,7 @@ def process_one(me_collection, me_project):
         # create agents
         job = gradio_client.submit(
             agents_manifest=agents_manifest,
-            gpt_model="gpt-5",
+            gpt_model="gpt-5-mini",
             session_id=session_id,
             api_name="/error_scanner__create_agents"
         )
@@ -189,7 +189,7 @@ def process_one(me_collection, me_project):
         return None
 
 # %%
-MAX_WORKERS = 30
+MAX_WORKERS = 10
 def run_parallel(todo_items, output_df, output_file_name):
     results = output_df.to_dict(orient="records")
 
@@ -212,14 +212,14 @@ def run_parallel(todo_items, output_df, output_file_name):
                 
 
 # %%
-me_collection = "[153] P3: Prosperity"
+me_collection = "[1] World Development Indicators"
 me_project_list = fetch_me_project_list(me_collection)
 
 # %%
 todo = [(me_collection, me_project) for me_project in me_project_list]
 
 # %%
-output_file_name = "Data360_P3_Prosperity_metadata_issues_20251024.xlsx"
+output_file_name = "WDI_metadata_issues_20251124.xlsx"
 if os.path.exists(output_file_name):
     output_df = pd.read_excel(output_file_name)
 else:

@@ -1,0 +1,36 @@
+agents_manifest:
+  - name: primary
+    system_message: |
+      Thoroughly examine the metadata and check if there's anything evidently wrong/inconsistent/contradicting information within a metadata field or across different fields. Detect typos.
+
+  - name: critic
+    system_message: |
+      Summarize the findings in an organized way. Only include issues you are highly confident about—those that are clearly incorrect, inconsistent, or contradictory as well as typos. Ignore null/empty fields. Ignore empty list. Ignore formatting issues. Ignore name/code capitalization issues. It’s completely fine if you don’t have any issues to report.
+      Output is a JSON array of findings.
+      Finding schema:
+      [
+        {
+          "detected_issue": "<Brief description of what is wrong, written as a plain sentence>",
+          "issue_category": "<High-level type of issue describing how the metadata is problematic, in under three words>",
+          "current_metadata": {"<JSON key path separated by dots>": "<full current metadata value>"},
+          "suggested_metadata": {"<JSON key path separated by dots>": "<full suggested metadata value>"}
+        }
+      ]
+      "current_metadata" and "suggested_metadata" must each contain exactly one metadata item with a single JSON key path. Report only the metadata items that require correction.
+
+  - name: filter
+    system_message: |
+      Take critic's JSON array of findings. Include only critical issues. Include typos. Remove ambiguity issues.  Remove clarification issues.  Remove documentation issues. Remove capitalization issues. Remove spacing issues. Remove style issues. Remove issues with time coverate. Remove issues with CRLF, new line, or blank space. Remove issues related null/empty fields, empty list,  nested empty list, or formatting issues. Remove issues with schemas. Remove issues with URL paths. Remove issues related to the followings: "idno", "proj_idno", "version_statement", "prod_date", "version_date", "changed", "changed_by", "contacts", "topics", "tags", "database_id", "visualization".
+      Output is a JSON array of findings.
+      Finding schema:
+      [
+        {
+          "detected_issue": "<Brief description of what is wrong, written as a plain sentence>",
+          "issue_category": "<High-level type describing how the metadata is problematic in under three words>",
+          "current_metadata": {"<JSON key path separated by dots>": "<full current metadata value>"},
+          "suggested_metadata": {"<JSON key path separated by dots>": "<full suggested metadata value>"}
+        }
+      ]
+      Make sure that the JSON structures of "current_metadata" and "suggested_metadata" are identical.
+      Print a final line: DONE
+
