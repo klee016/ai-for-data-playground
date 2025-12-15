@@ -130,7 +130,7 @@ def process_one(me_collection, me_project):
 
         # load agents manifest
         job = gradio_client.submit(
-            file_name="error_scanner_kam_20251124.yml",
+            file_name="error_scanner_kam_20251215.yml",
             session_id=session_id,
             api_name="/error_scanner__load_agents_manifest"
         )
@@ -219,7 +219,7 @@ me_project_list = fetch_me_project_list(me_collection)
 todo = [(me_collection, me_project) for me_project in me_project_list]
 
 # %%
-output_file_name = "WDI_metadata_issues_20251124.xlsx"
+output_file_name = "WDI_metadata_issues_20251215.xlsx"
 if os.path.exists(output_file_name):
     output_df = pd.read_excel(output_file_name)
 else:
