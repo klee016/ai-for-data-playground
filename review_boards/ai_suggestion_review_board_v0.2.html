@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Suggestion Review Board</title>
+
+<!-- Vue 3 -->
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<!-- SheetJS for Excel parsing -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<style>
+  :root{
+    --bg:#ffffff; --panel:#f7f9fc; --ink:#111; --muted:#555;
+    --line:#1b85c9; --line-2:#26a3e2; --bad:#e74c3c; --good:#28a745;
+  }
+  *{ box-sizing:border-box }
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.6 Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  }
+  .container{ max-width:1200px; margin:28px auto; padding:0 16px }
+
+  h2{ margin:0 0 8px 4px; color:var(--line); font-weight:700 }
+
+  .toolbar{
+    display:flex; gap:12px; align-items:center;
+    margin:0 0 10px 4px;
+  }
+  .btn{
+    border:1px solid var(--line);
+    background:linear-gradient(90deg,var(--line),var(--line-2));
+    color:#fff; font-size:.95rem; padding:6px 12px;
+    border-radius:4px; cursor:pointer;
+  }
+  .btn:disabled{
+    opacity:.6; cursor:default;
+  }
+  .hint{ font-size:.85rem; color:var(--muted); }
+
+  .card{ border:1px solid var(--line); background:var(--panel); margin-bottom:18px }
+  table{ width:100%; border-collapse:collapse }
+  thead th{
+    text-align:left; font-weight:700; color:var(--ink); background:#e8f4fc;
+  }
+  tbody tr{ cursor:pointer; transition:background .15s ease }
+  tbody tr:hover{ background:rgba(37,182,230,.08) }
+  tbody tr.active{ outline:2px solid var(--line-2); background:rgba(37,182,230,.12) }
+  td, th{ padding:12px 10px; border-bottom:1px solid var(--line) }
+  .small{ color:var(--muted); font-size:.92rem }
+
+  .scrollable-table{
+    max-height: 250px; /* roughly 5 rows visible */
+    overflow-y: auto;
+    display: block;
+  }
+
+  .grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:18px }
+  .panel{ border:1px solid var(--line); background:var(--panel); min-height:280px }
+  .panel h3{
+    margin:0;
+    background:linear-gradient(90deg,var(--line),var(--line-2));
+    color:#fff; padding:8px 12px; font-size:1rem; font-weight:600;
+  }
+  .content{
+    padding:16px;
+    white-space:pre-wrap;
+    overflow:auto;
+    max-height:520px;
+  }
+
+  .token{
+    padding:2px 3px; border-radius:4px;
+    margin:0 1px 2px 0;
+    display:inline-block;
+    white-space:pre-wrap;
+  }
+  .add{ background:rgba(40,167,69,.15); outline:1px solid var(--good) }
+  .del{ background:rgba(231,76,60,.15); outline:1px solid var(--bad) }
+
+  .legend{
+    display:flex; gap:16px; align-items:center;
+    margin:10px 0 2px 0; color:var(--muted); font-size:.9rem;
+  }
+  .swatch{
+    width:12px; height:12px; border-radius:3px;
+    display:inline-block; vertical-align:middle;
+  }
+  .swatch.add{ background:var(--good) }
+  .swatch.del{ background:var(--bad) }
+
+  .key{
+    color:var(--line);
+    font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size:.95rem;
+  }
+
+  .error-message{
+    color:var(--bad);
+    font-size:.88rem;
+    margin:4px 0 10px 4px;
+  }
+
+  /* Category pill: neutral base style */
+  .cat-pill {
+    display: inline-block !important;   /* Prevent stretch */
+    width: auto !important;             /* Never expand */
+    max-width: max-content;             /* Size to text */
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(0,0,0,.06);
+    background: #fff;
+    color: #333;
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+
+  /* 14 category classes, scoped ONLY to the badge */
+  .cat-pill.catpill-classification { background:#FFE9D6; color:#7A4200; }
+  .cat-pill.catpill-contradiction { background:#FFE1E4; color:#7A1F29; }
+  .cat-pill.catpill-datetime { background:#FFF5CC; color:#7A6800; }
+  .cat-pill.catpill-definition { background:#E5F3FF; color:#004F7A; }
+  .cat-pill.catpill-duplication { background:#F3E7FF; color:#4A007A; }
+  .cat-pill.catpill-formatting { background:#E7F7F0; color:#005C47; }
+  .cat-pill.catpill-identifier { background:#E3EDFF; color:#003C7A; }
+  .cat-pill.catpill-inconsistency { background:#FFEAD8; color:#7A3C00; }
+  .cat-pill.catpill-incorrect { background:#FFE4C8; color:#7A3F00; }
+  .cat-pill.catpill-methodology { background:#E7EEFA; color:#2D497A; }
+  .cat-pill.catpill-missing { background:#FFF0E0; color:#7A4B00; }
+  .cat-pill.catpill-source { background:#E4F0E8; color:#235C3B; }
+  .cat-pill.catpill-typo { background:#FDEBF2; color:#7A2953; }
+  .cat-pill.catpill-unit { background:#E6FBFF; color:#006A7A; }
+
+  /* fallback */
+  .cat-pill.catpill-unknown { background:#E9ECEF; color:#495057; }
+</style>
+</head>
+<body>
+<div id="app" class="container">
+  <h1>[Prototype] AI Suggestion Review Board (Metadata errors/issues)</h1>
+  
+  <!-- Top toolbar: Load Excel -->
+  <div class="toolbar">
+    <button class="btn" @click="triggerFileInput" :disabled="isLoading">
+      {{ isLoading ? 'Loading…' : 'Load Excel' }}
+    </button>
+    <span class="hint">
+      Expecting columns <code>ME_project</code> and <code>detected_issues</code> (JSON array with issue_category, detected_issue, current_metadata, suggested_metadata).
+    </span>
+  </div>
+  <div v-if="fileError" class="error-message">
+    {{ fileError }}
+  </div>
+  <input
+    type="file"
+    ref="fileInput"
+    @change="handleFileChange"
+    accept=".xlsx,.xls"
+    style="display:none"
+  />
+
+  <!-- Metadata Projects -->
+  <h2>Metadata Projects</h2>
+  <div class="card">
+    <div class="scrollable-table">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:72px">#</th>
+            <th>Metadata Project</th>
+            <th style="width:320px">Issues by Category</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(proj, i) in findings" :key="proj.metadata_project || i"
+              :class="{active: i === selectedProjectIndex}"
+              @click="selectProject(i)">
+            <td><strong>{{ i+1 }}</strong></td>
+            <td>{{ proj.metadata_project }}</td>
+            <td>
+              <div
+                class="small"
+                v-if="proj.issue_list && proj.issue_list.length"
+              >
+                <div
+                  v-for="(count, cat) in categoryCounts(proj.issue_list)"
+                  :key="cat"
+                >
+                  {{ count }} {{ cat }}
+                </div>
+              </div>
+              <div class="small" v-else>
+                No issues
+              </div>
+            </td>
+          </tr>
+          <tr v-if="!findings.length">
+            <td colspan="3" class="small" style="padding:20px">
+              Load an Excel file to see projects.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Detected Issues -->
+  <h2>Detected Issues</h2>
+
+  <div class="card">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:72px">#</th>
+          <th>Issue</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="(row, i) in issues" :key="(row.detected_issue || row.detected_error || '') + i"
+            :class="{active: i === selectedIssueIndex}"
+            @click="selectIssue(i)">
+          <td><strong>{{ i+1 }}</strong></td>
+          <td>
+            <div style="display:flex;flex-direction:column;gap:4px;">
+              <!-- Badge above description -->
+              <span
+                v-if="row.issue_category"
+                class="cat-pill"
+                :class="categoryClass(row.issue_category)"
+              >
+                {{ row.issue_category }}
+              </span>
+              <span>{{ row.detected_issue || row.detected_error }}</span>
+              <div class="small" v-if="firstKey(row.current_metadata)">
+                Key: <span class="key">{{ firstKey(row.current_metadata) }}</span>
+              </div>
+            </div>
+          </td>
+        </tr>
+        <tr v-if="!issues.length">
+          <td colspan="2" class="small" style="padding:20px">
+            Select a project to view its issues.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Diff -->
+  <div class="grid" v-if="activeIssue">
+    <div class="panel">
+      <h3>Current Metadata</h3>
+      <div class="content" v-html="diffHtml.current"></div>
+    </div>
+    <div class="panel">
+      <h3>Suggested Metadata</h3>
+      <div class="content" v-html="diffHtml.suggested"></div>
+    </div>
+  </div>
+
+  <div class="legend" v-if="activeIssue">
+    <span><span class="swatch del"></span> different in current</span>
+    <span><span class="swatch add"></span> different in suggested</span>
+  </div>
+</div>
+
+<script>
+const { createApp } = Vue;
+
+createApp({
+  data(){
+    return {
+      selectedProjectIndex: 0,
+      selectedIssueIndex: 0,
+      findings: [],      // populated from Excel
+      fileError: null,
+      isLoading: false,
+      // map from full category name to *badge-only* class
+      categoryMap: {
+        "Classification / Coding Issue": "catpill-classification",
+        "Contradiction": "catpill-contradiction",
+        "Date / Time Issue": "catpill-datetime",
+        "Definition / Concept Issue": "catpill-definition",
+        "Duplication": "catpill-duplication",
+        "Formatting / Structure": "catpill-formatting",
+        "Identifier / ID Issue": "catpill-identifier",
+        "Inconsistency": "catpill-inconsistency",
+        "Incorrect Content": "catpill-incorrect",
+        "Methodology Issue": "catpill-methodology",
+        "Missing Information": "catpill-missing",
+        "Source / Attribution Issue": "catpill-source",
+        "Typo / Wording": "catpill-typo",
+        "Unit / Measurement Issue": "catpill-unit"
+      }
+    };
+  },
+  computed:{
+    activeProject(){ return this.findings[this.selectedProjectIndex] || null; },
+
+    // raw issues for the selected project
+    projectIssues(){
+      return this.activeProject ? (this.activeProject.issue_list || []) : [];
+    },
+
+    // issues (no category filter now)
+    issues(){
+      return this.projectIssues;
+    },
+
+    activeIssue(){ return this.issues[this.selectedIssueIndex] || null; },
+
+    diffHtml(){
+      if(!this.activeIssue) return { current:"", suggested:"" };
+      const curr = this.toValueString(this.firstValue(this.activeIssue.current_metadata));
+      const sugg = this.toValueString(this.firstValue(this.activeIssue.suggested_metadata));
+      return this.wordDiffHtml(curr, sugg);
+    }
+  },
+  methods:{
+    /* ---------- file loading ---------- */
+    triggerFileInput(){
+      this.$refs.fileInput.click();
+    },
+    handleFileChange(event){
+      const file = event.target.files[0];
+      if (!file) return;
+      this.parseExcel(file);
+      event.target.value = "";
+    },
+    parseExcel(file){
+      this.fileError = null;
+      this.isLoading = true;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: "array" });
+          const firstSheetName = workbook.SheetNames[0];
+          const sheet = workbook.Sheets[firstSheetName];
+          const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+          const findings = [];
+          rows.forEach(row => {
+            const project = row.ME_project || row.metadata_project;
+            const issuesCell = row.detected_issues || row.issue_list;
+            if (!project || !issuesCell) {
+              return; // skip incomplete rows
+            }
+            let issue_list = [];
+            if (Array.isArray(issuesCell)) {
+              issue_list = issuesCell;
+            } else if (typeof issuesCell === "string") {
+              try {
+                const parsed = JSON.parse(issuesCell);
+                if (Array.isArray(parsed)) {
+                  issue_list = parsed;
+                } else {
+                  issue_list = [parsed];
+                }
+              } catch (err) {
+                console.error("Failed to parse detected_issues JSON:", err, issuesCell);
+              }
+            }
+            findings.push({
+              metadata_project: project,
+              issue_list
+            });
+          });
+
+          if (!findings.length) {
+            this.fileError = "No valid rows found. Check that columns 'ME_project' and 'detected_issues' are present and that 'detected_issues' contains valid JSON.";
+          }
+
+          this.findings = findings;
+          this.selectedProjectIndex = 0;
+          this.selectedIssueIndex = 0;
+        } catch (err) {
+          console.error(err);
+          this.fileError = "Failed to read Excel file. Please check its format.";
+        } finally {
+          this.isLoading = false;
+        }
+      };
+      reader.onerror = () => {
+        this.fileError = "Error reading the file.";
+        this.isLoading = false;
+      };
+      reader.readAsArrayBuffer(file);
+    },
+
+    /* ---------- selection ---------- */
+    selectProject(i){
+      this.selectedProjectIndex = i;
+      this.selectedIssueIndex = 0;
+    },
+    selectIssue(i){
+      this.selectedIssueIndex = i;
+    },
+
+    /* ---------- category helpers ---------- */
+    categoryClass(cat){
+      return this.categoryMap[cat] || 'catpill-unknown';
+    },
+    categoryCounts(list){
+      const map = {};
+      (list || []).forEach(i=>{
+        const c = i.issue_category || "Other";
+        map[c] = (map[c] || 0) + 1;
+      });
+      return map;
+    },
+
+    /* ---------- value helpers ---------- */
+    firstKey(obj){
+      if (!obj) return "";
+      const keys = Object.keys(obj);
+      return keys.length ? keys[0] : "";
+    },
+    firstValue(obj){
+      const key = this.firstKey(obj);
+      return key ? obj[key] : "";
+    },
+
+    toValueString(v){
+      if (typeof v === "string") return v;
+      try { return this.stableStringify(v, 2); }
+      catch { return String(v ?? ""); }
+    },
+
+    // Stable JSON stringify (sort keys recursively for deterministic diffs)
+    stableStringify(value, space = 2){
+      const seen = new WeakSet();
+      const sorter = (obj) => {
+        if (obj === null || typeof obj !== "object") return obj;
+        if (seen.has(obj)) return "[Circular]";
+        seen.add(obj);
+        if (Array.isArray(obj)) return obj.map(sorter);
+        const out = {};
+        Object.keys(obj).sort().forEach(k => { out[k] = sorter(obj[k]); });
+        return out;
+      };
+      return JSON.stringify(sorter(value), null, space);
+    },
+
+    /* ---------- diff (LCS) ---------- */
+    wordDiffHtml(a,b){
+      const A = this.tokenize(a), B = this.tokenize(b);
+      const n=A.length, m=B.length;
+      const dp=Array.from({length:n+1},()=>Array(m+1).fill(0));
+      for(let i=n-1;i>=0;i--){
+        for(let j=m-1;j>=0;j--){
+          dp[i][j] = (A[i]===B[j])
+            ? dp[i+1][j+1] + 1
+            : Math.max(dp[i+1][j], dp[i][j+1]);
+        }
+      }
+      const ops=[]; let i=0,j=0;
+      while(i<n && j<m){
+        if(A[i]===B[j]){
+          ops.push({t:'eq',a:A[i++],b:B[j++]});
+        } else if(dp[i+1][j] >= dp[i][j+1]){
+          ops.push({t:'del',a:A[i++]});
+        } else {
+          ops.push({t:'add',b:B[j++]});
+        }
+      }
+      while(i<n) ops.push({t:'del',a:A[i++]});
+      while(j<m) ops.push({t:'add',b:B[j++]});
+
+      const span=(cls,t)=>`<span class="token ${cls}">${this.escape(t)}</span>`;
+      const plain=t=>`<span class="token">${this.escape(t)}</span>`;
+      let L="",R="";
+      ops.forEach(o=>{
+        if(o.t==='eq'){ L+=plain(o.a); R+=plain(o.b); }
+        else if(o.t==='del'){ L+=span('del',o.a); }
+        else if(o.t==='add'){ R+=span('add',o.b); }
+      });
+      const nl = this.escape("\n");
+      L = L.replaceAll(nl, "<br>");
+      R = R.replaceAll(nl, "<br>");
+      return { current:L, suggested:R };
+    },
+
+    tokenize(text){
+      // Preserve structure for JSON-like strings and sentences
+      return String(text)
+        .replace(/\r\n|\r/g,"\n")
+        .replace(/\n/g," \n ")
+        .split(/(\s+|[{}[\]]+|[<>\\]+)/g)    
+        .filter(x => x !== undefined && x !== "" && !/^\s+$/.test(x));
+    },
+
+    escape(s){
+      return String(s)
+        .replace(/&/g,"&amp;")
+        .replace(/</g,"&lt;")
+        .replace(/>/g,"&gt;");
+    }
+  },
+  mounted(){
+    if(this.findings.length){
+      this.selectedProjectIndex = 0;
+      this.selectedIssueIndex = 0;
+    }
+  }
+}).mount('#app');
+</script>
+</body>
+</html>
