@@ -1,0 +1,1 @@
+python -u error_scanner_parallel_run_WB_WDI.py > error_scanner_parallel_run_WB_WDI_20260209.log 2>&1 &

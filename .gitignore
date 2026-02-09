@@ -209,6 +209,7 @@ __marimo__/
 
 # log files
 log/
+*.log
 
 # backup files
 backup*/
