@@ -279,7 +279,7 @@ class ErrorScanner:
         session_id = self.create_session()
         agents_manifest = self.load_agents_manifest_file("default_agents_manifest.yml", session_id)[0]
         self.create_agents(agents_manifest, "gpt-5.4", session_id)
-        
+        return self.start_agents_activity(metadata_to_scan, team_preset="RoundRobinGroupChat", session_id=session_id)        
     
     def handler(self):
         """
