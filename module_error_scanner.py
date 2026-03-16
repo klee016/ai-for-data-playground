@@ -97,6 +97,7 @@ class ErrorScanner:
         temperature = 1 if gpt_model.startswith("gpt-5") else 0
         openai_model_client = OpenAIChatCompletionClient(
             model=gpt_model,
+            model_info={"family": "gpt", "vision": False, "json_output": True, "function_calling": True},
             api_key=self.openai_api_key,
             temperature=temperature,
             seed=1029,
@@ -273,6 +274,12 @@ class ErrorScanner:
     def stop_agents_activity(self, session_id=None):
         session = self.get_session(session_id)
         session['external_termination'].set()
+
+    async def run_with_default_options(self, metadata_to_scan):
+        session_id = self.create_session()
+        agents_manifest = self.load_agents_manifest_file("default_agents_manifest.yml", session_id)[0]
+        self.create_agents(agents_manifest, "gpt-5.4", session_id)
+        
     
     def handler(self):
         """
@@ -296,7 +303,7 @@ class ErrorScanner:
                 ### 1️⃣ Select a GPT model.
                 """
             )
-            gpt_model_rdo = gr.Radio(["gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-4.1", "gpt-4.1-mini"], value="gpt-5-mini", label="GPT models")
+            gpt_model_rdo = gr.Radio(["gpt-5.4", "gpt-5-mini", "gpt-5-nano"], value="gpt-5-mini", label="GPT models")
 
             # UI section for defining agents
             guide_md2 = gr.Markdown(
@@ -397,6 +404,15 @@ class ErrorScanner:
             )
             stop_agents_activity_btn.click(fn=self.stop_agents_activity, inputs=[session_id], outputs=None, show_api=False)
             delete_session_btn.click(fn=self.delete_session, inputs=[session_id], show_api=True, api_name="error_scanner__delete_session")
+
+            # API only functions
+            gr.on(
+                triggers=None,
+                fn=self.run_with_default_options,
+                inputs=[metadata_to_scan_tb],
+                outputs=[final_output_js],
+                show_api=True, api_name="error_scanner__run_with_default_options"
+            )
 
             # Periodically unload session if idle
             unload_session_timer = gr.Timer(600)
