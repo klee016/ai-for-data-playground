@@ -148,7 +148,7 @@ class ErrorScanner:
         """
         logging.info("Creating agents according to the agents manifest YAML file...")
         session = self.get_session(session_id)
-        manifest = yaml.safe_load(agents_manifest)
+        manifest = yaml.safe_load(agents_manifest)       
         openai_model_client = self.create_openai_model_client(gpt_model)
         agent_list = []
         for entry in manifest.get("agents_manifest", []):
@@ -276,10 +276,34 @@ class ErrorScanner:
         session['external_termination'].set()
 
     async def run_with_default_options(self, metadata_to_scan):
-        session_id = self.create_session()
-        agents_manifest = self.load_agents_manifest_file("default_agents_manifest.yml", session_id)[0]
-        self.create_agents(agents_manifest, "gpt-5.4", session_id)
-        return self.start_agents_activity(metadata_to_scan, team_preset="RoundRobinGroupChat", session_id=session_id)        
+        try:
+            session_id = self.create_session()
+            agents_manifest = self.load_agents_manifest_file("default_agents_manifest.yml", session_id)[0]
+            self.create_agents(agents_manifest, "gpt-5.4", session_id)
+            final_output = None
+            final_extra = None
+        
+            async for output, extra in self.start_agents_activity(
+                metadata_to_scan,
+                team_preset="RoundRobinGroupChat",
+                session_id=session_id,
+            ):
+                final_output = output
+                final_extra = extra
+            
+            idx = final_output.rfind("----------")
+            text = final_output[idx:]
+            match = re.search(r'(\{.*\}|\[.*\])', text, re.DOTALL)    
+            if match:
+                try:
+                    data = json.loads(match.group(1))
+                    return data
+                except json.JSONDecodeError:
+                    return None
+            return None
+            
+        finally:
+            self.delete_session(session_id)
     
     def handler(self):
         """
@@ -406,8 +430,8 @@ class ErrorScanner:
             delete_session_btn.click(fn=self.delete_session, inputs=[session_id], show_api=True, api_name="error_scanner__delete_session")
 
             # API only functions
-            gr.on(
-                triggers=None,
+            run_with_default_options_btn = gr.Button("Run with default options", visible=False)
+            run_with_default_options_btn.click(
                 fn=self.run_with_default_options,
                 inputs=[metadata_to_scan_tb],
                 outputs=[final_output_js],
